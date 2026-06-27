@@ -23,6 +23,10 @@ let activeAction = null;
 let paused = false;
 let leftKnee = null;
 let rightKnee = null;
+let leftFoot = null;
+let rightFoot = null;
+let leftToe = null;
+let rightToe = null;
 let spineBone = null;
 let eyeBone = null;
 let floorPlane;
@@ -45,6 +49,7 @@ let stabilize = true;
 let floorBeamVisible = true;
 let wallBeamVisible = true;
 let activeSurface = 'floor';
+let eyeMode = 'neutral';
 let yaw = 180;
 let targetHeight = 1.7;
 let tau = 0.18;
@@ -60,6 +65,10 @@ const moveKeys = new Set();
 const eyeFiltered = new THREE.Vector3(0, 1.58, 0.15);
 const lookFiltered = new THREE.Vector3(0, 1.36, -2.2);
 let gaitPhase = 0;
+let lastFloorAngle = 0;
+let smoothedFloorAngle = 45;
+let lastAssessmentTime = 0;
+const stabVelocity = new THREE.Vector3(0, 0, 0);
 
 const DEFAULT_SURFACE_STATE = {
   floor: {
@@ -107,10 +116,34 @@ const ASSETS = {
 };
 
 const PRESETS = {
-  running: { label: '러닝 / 걷기', motions: ['Running', 'Standard Run'], floor: [0, 0.012, -1.0], wall: [0, 1.18, -2.25], height: 170, yaw: 180, tau: 0.03, fov: 65, pitch: -10, floorW: 95, floorD: 160, wallW: 42, wallH: 155 },
-  boxing: { label: '복싱 / 격투', motions: ['Hook', 'MMA Kick'], floor: [0, 0.012, -1.0], wall: [0, 1.25, -2.05], height: 170, yaw: 180, tau: 0.08, fov: 60, pitch: -5, floorW: 90, floorD: 160, wallW: 48, wallH: 150 },
-  fitness: { label: '홈트 / 근력', motions: ['Kettlebell Swing', 'Start Jumping Jacks'], floor: [0, 0.012, -1.0], wall: [0, 1.25, -2.15], height: 170, yaw: 180, tau: 0.1, fov: 60, pitch: -5, floorW: 110, floorD: 160, wallW: 50, wallH: 160 },
-  dance: { label: '댄스 / 리듬', motions: ['Hip Hop Dancing'], floor: [0, 0.012, -1.0], wall: [0, 1.35, -2.35], height: 170, yaw: 180, tau: 0.1, fov: 62, pitch: -4, floorW: 120, floorD: 160, wallW: 55, wallH: 170 }
+  running: { label: '러닝 / 걷기', motions: ['Running', 'Standard Run'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.18, -2.25], height: 170, yaw: 180, tau: 0.03, fov: 50, pitch: -18, floorW: 95, floorD: 160, wallW: 42, wallH: 155 },
+  boxing: { label: '복싱 / 격투', motions: ['Hook', 'MMA Kick'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.25, -2.05], height: 170, yaw: 180, tau: 0.08, fov: 48, pitch: -12, floorW: 90, floorD: 160, wallW: 200, wallH: 200 },
+  fitness: { label: '홈트 / 근력', motions: ['Kettlebell Swing', 'Start Jumping Jacks'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.25, -2.15], height: 170, yaw: 180, tau: 0.1, fov: 48, pitch: -12, floorW: 110, floorD: 160, wallW: 200, wallH: 200 },
+  dance: { label: '댄스 / 리듬', motions: ['Hip Hop Dancing'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.35, -2.35], height: 170, yaw: 180, tau: 0.1, fov: 48, pitch: -10, floorW: 120, floorD: 160, wallW: 200, wallH: 200 }
+};
+
+const EYE_MODES = {
+  neutral: {
+    label: '정면 중심',
+    note: '28mm 풀프레임 근사 (수직 50°). 자연스러운 원근감으로 정면을 보며 바닥 UI를 확인하는 기본 설정.',
+    fov: 50,
+    pitch: -15,
+    lowerField: 40
+  },
+  active: {
+    label: '운동 기본',
+    note: '달리거나 운동 중 자연스럽게 시선이 약간 아래로 내려간 상태. 바닥 UI가 시야 하단에 들어옵니다.',
+    fov: 50,
+    pitch: -20,
+    lowerField: 45
+  },
+  inspect: {
+    label: '바닥 확인',
+    note: '고개를 많이 숙여 바닥 UI를 직접 확인하는 상태. 실제 투사 영역과 발자국 위치를 점검할 때 사용.',
+    fov: 52,
+    pitch: -30,
+    lowerField: 56
+  }
 };
 
 init();
@@ -132,7 +165,7 @@ function init() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101010);
   scene.fog = new THREE.FogExp2(0x101010, 0.075);
-  camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.02, 80);
+  camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.02, 80);
   camera.position.set(2.7, 1.8, 3.1);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -154,12 +187,12 @@ function init() {
   d.castShadow = true;
   scene.add(d);
 
-  ground = new THREE.Mesh(new THREE.PlaneGeometry(8, 8), new THREE.MeshStandardMaterial({ color: 0x202020, roughness: 0.8 }));
+  ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0x202020, roughness: 0.8 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  grid = new THREE.GridHelper(8, 16, 0x6a2020, 0x333333);
+  grid = new THREE.GridHelper(300, 150, 0x6a2020, 0x333333);
   grid.position.y = 0.002;
   scene.add(grid);
 
@@ -177,6 +210,7 @@ function init() {
   bind();
   setActiveSurface('floor');
   updateBeamToggleLabels();
+  setEyeMode('neutral');
   setPreset('running', false);
   animate();
 
@@ -271,8 +305,8 @@ function cmToCanvasPx(surface, cm, axis) {
   return (cm / physical) * size;
 }
 
-function drawFootprint(ctx, cx, cy, lengthPx) {
-  const widthPx = Math.max(18, lengthPx * 0.42);
+function drawFootprint(ctx, cx, cy, lengthPx, widthPx) {
+  widthPx = Math.max(10, widthPx ?? lengthPx * 0.42);
   const heelW = widthPx * 0.74;
   const heelH = lengthPx * 0.38;
   const toeR = widthPx * 0.115;
@@ -320,12 +354,17 @@ function drawSurfaceGraphic(surface) {
   const { ctx, width, height } = surfaceTextures[surface];
   const graphicCenterX = width / 2 + cmToCanvasPx(surface, cfg.graphicX, 'x');
   const graphicCenterY = height / 2 + cmToCanvasPx(surface, cfg.graphicY, 'y');
-  const graphicSizePx = mmToCanvasPx(surface, cfg.graphicSize);
+  const plane = surface === 'floor' ? floorPlane : wallPlane;
+  const pxPerMmX = width / Math.max(1, plane.scale.x * 1000);
+  const pxPerMmY = height / Math.max(1, plane.scale.y * 1000);
 
   if (cfg.graphicType === 'none') return;
 
   if (cfg.graphicType === 'footprint') {
-    drawFootprint(ctx, graphicCenterX, graphicCenterY, Math.max(16, graphicSizePx));
+    // length maps to depth axis (Y), width maps to lateral axis (X) independently
+    const footLen = Math.max(16, cfg.graphicSize * pxPerMmY);
+    const footWid = Math.max(10, cfg.graphicSize * 0.42 * pxPerMmX);
+    drawFootprint(ctx, graphicCenterX, graphicCenterY, footLen, footWid);
     return;
   }
 
@@ -342,12 +381,11 @@ function refreshSurfaceTexture(surface) {
   const tex = surfaceTextures[surface];
   const { ctx, width, height } = tex;
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = '#1b1b1b';
+  ctx.fillStyle = '#7d7d7d';
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-  ctx.lineWidth = Math.max(4, Math.round(Math.min(width, height) * 0.015));
-  ctx.strokeRect(18, 18, width - 36, height - 36);
+  ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+  ctx.lineWidth = Math.max(3, Math.round(Math.min(width, height) * 0.01));
+  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, width - ctx.lineWidth, height - ctx.lineWidth);
 
   drawSurfaceGraphic(surface);
 
@@ -546,6 +584,8 @@ async function selectMotion(name) {
     const obj = loader.parse(buf, '');
     const clip = obj.animations && obj.animations[0];
     if (!clip) throw new Error('애니메이션 클립 없음');
+    // Strip root bone position tracks so the clip loops without snapping
+    clip.tracks = clip.tracks.filter(t => !/\.position$/.test(t.name) || !/hips|rootnode/i.test(t.name));
     if (!mixer) mixer = new THREE.AnimationMixer(modelRoot);
     mixer.stopAllAction();
     activeAction = mixer.clipAction(clip);
@@ -608,6 +648,10 @@ function findBones() {
   if (!modelRoot) return;
   leftKnee = findBoneByCandidates(modelRoot, ['LeftLowerLeg', 'mixamorigLeftLeg', 'mixamorig:LeftLeg', 'LeftLeg', 'LeftKnee']);
   rightKnee = findBoneByCandidates(modelRoot, ['RightLowerLeg', 'mixamorigRightLeg', 'mixamorig:RightLeg', 'RightLeg', 'RightKnee']);
+  leftFoot = findBoneByCandidates(modelRoot, ['LeftFoot', 'mixamorigLeftFoot', 'mixamorig:LeftFoot']);
+  rightFoot = findBoneByCandidates(modelRoot, ['RightFoot', 'mixamorigRightFoot', 'mixamorig:RightFoot']);
+  leftToe = findBoneByCandidates(modelRoot, ['LeftToeBase', 'LeftToe_End', 'mixamorigLeftToeBase', 'mixamorig:LeftToeBase']);
+  rightToe = findBoneByCandidates(modelRoot, ['RightToeBase', 'RightToe_End', 'mixamorigRightToeBase', 'mixamorig:RightToeBase']);
   spineBone = findBoneByCandidates(modelRoot, ['Spine2', 'Spine1', 'mixamorigSpine', 'mixamorig:Hips', 'Hips', 'Spine']);
   eyeBone = findBoneByCandidates(modelRoot, ['mixamorigHead', 'Head', 'Neck']);
   setTextIfPresent('leftBone', leftKnee ? leftKnee.name : 'fallback');
@@ -629,7 +673,7 @@ function setPreset(p, apply = true) {
   setNumberPair('pitch', preset.pitch);
   setNumberPair('floorW', preset.floorW);
   setNumberPair('floorD', preset.floorD);
-  setNumberPair('floorZ', Math.abs(preset.floor[2] * 100));
+  setNumberPair('floorZ', preset.floorStart ?? 20);
   setNumberPair('wallW', preset.wallW);
   setNumberPair('wallH', preset.wallH);
   setNumberPair('wallZ', Math.abs(preset.wall[2] * 100));
@@ -662,6 +706,31 @@ function setKneeSide(v) {
   log(`무릎 빔프로젝터 위치: ${v === 'left' ? '왼쪽' : '오른쪽'} 1개`);
 }
 
+function updateEyeModePanel() {
+  const cfg = EYE_MODES[eyeMode];
+  const eyeHeightCm = modelLoaded ? getWorld(eyeBone, 'E').y * 100 : modelHeight * 93;
+  const visibleStartCm = Math.max(0, eyeHeightCm / Math.tan(THREE.MathUtils.degToRad(cfg.lowerField)));
+  const coverageText = visibleStartCm <= 20
+    ? '발 앞 20~180cm 기본 커버'
+    : `발 앞 ${visibleStartCm.toFixed(0)}cm부터 안정적으로 보임`;
+  document.querySelectorAll('[data-eye-mode]').forEach((btn) => btn.classList.toggle('active', btn.dataset.eyeMode === eyeMode));
+  setTextIfPresent('eyeModeLabel', cfg.label);
+  setTextIfPresent('eyeVisibleStart', `발 앞 ${visibleStartCm.toFixed(0)}cm`);
+  setTextIfPresent('eyeCoverage', coverageText);
+  setTextIfPresent('eyeModeNote', cfg.note);
+}
+
+function setEyeMode(mode) {
+  eyeMode = mode;
+  const cfg = EYE_MODES[mode];
+  setNumberPair('fov', cfg.fov);
+  setNumberPair('pitch', cfg.pitch);
+  camera.fov = cfg.fov;
+  camera.updateProjectionMatrix();
+  updateEyeModePanel();
+  if (currentView === 'eye') updateFirstPersonCamera(0.016, true);
+}
+
 function setStab(v) {
   stabilize = v;
   by('stabOn').classList.toggle('active', v);
@@ -675,6 +744,7 @@ function bind() {
   document.querySelectorAll('[data-preset]').forEach((btn) => btn.addEventListener('click', () => setPreset(btn.dataset.preset)));
   document.querySelectorAll('[data-rotate]').forEach((btn) => btn.addEventListener('click', () => rotateModel(Number(btn.dataset.rotate))));
   document.querySelectorAll('.surface-tab').forEach((btn) => btn.addEventListener('click', () => setActiveSurface(btn.dataset.surface)));
+  document.querySelectorAll('[data-eye-mode]').forEach((btn) => btn.addEventListener('click', () => setEyeMode(btn.dataset.eyeMode)));
   by('flipForward').addEventListener('click', () => rotateModel(180));
   by('reloadAssets').addEventListener('click', autoLoadAssets);
   by('playPause').addEventListener('click', playPause);
@@ -801,6 +871,7 @@ function bind() {
 function resetSettings() {
   moveKeys.clear();
   userPosition.set(0, 0, 0);
+  stabVelocity.set(0, 0, 0);
   gaitPhase = 0;
   rawPhase = 0;
   floorBeamVisible = true;
@@ -813,6 +884,7 @@ function resetSettings() {
   setKneeSide('right');
   by('kneeSide').value = 'right';
   setStab(true);
+  setEyeMode('neutral');
   setPreset('running', true);
   setActiveSurface('floor');
   refreshSurfaceTexture('floor');
@@ -852,15 +924,15 @@ function syncControlLabels() {
   by('yawVal').textContent = `${by('yaw').value}°`;
   by('heightVal').textContent = `${by('height').value} cm`;
   by('tauVal').textContent = `${Number(by('tau').value).toFixed(2)}s`;
-  by('fovVal').textContent = `${by('fov').value}°`;
-  by('pitchVal').textContent = `${by('pitch').value}°`;
   by('speedVal').textContent = `${Number(by('speed').value).toFixed(2)}x`;
+  updateEyeModePanel();
 }
 
 function updateSurfaceFromInputs(reset = false) {
   const floorW = Number(by('floorW').value) / 100;
   const floorD = Number(by('floorD').value) / 100;
-  const floorZ = -Number(by('floorZ').value) / 100;
+  const floorStart = Number(by('floorZ').value) / 100;
+  const floorCenterZ = -(floorStart + floorD / 2);
   const wallW = Number(by('wallW').value) / 100;
   const wallH = Number(by('wallH').value) / 100;
   const wallZ = -Number(by('wallZ').value) / 100;
@@ -868,15 +940,15 @@ function updateSurfaceFromInputs(reset = false) {
   wallPlane.scale.set(wallW, wallH, 1);
   by('floorWVal').textContent = `${Math.round(floorW * 100)} cm`;
   by('floorDVal').textContent = `${Math.round(floorD * 100)} cm`;
-  by('floorZVal').textContent = `${Math.round(Math.abs(floorZ) * 100)} cm`;
+  by('floorZVal').textContent = `${Math.round(floorStart * 100)} cm`;
   by('wallWVal').textContent = `${Math.round(wallW * 100)} cm`;
   by('wallHVal').textContent = `${Math.round(wallH * 100)} cm`;
   by('wallZVal').textContent = `${Math.round(Math.abs(wallZ) * 100)} cm`;
   if (reset) {
-    floorPlane.position.fromArray(PRESETS[currentPreset].floor);
+    floorPlane.position.set(0, PRESETS[currentPreset].floor[1], floorCenterZ);
     wallPlane.position.fromArray(PRESETS[currentPreset].wall);
   } else {
-    floorPlane.position.z = floorZ;
+    floorPlane.position.z = floorCenterZ;
     wallPlane.position.z = wallZ;
     floorPlane.position.x = 0;
     wallPlane.position.x = 0;
@@ -897,6 +969,25 @@ function getWorld(obj, type) {
     return v;
   }
   return fallbackPoint(type);
+}
+
+function modelForwardOffset(distance) {
+  const offset = new THREE.Vector3(0, 0, -distance);
+  if (modelRoot) {
+    const q = new THREE.Quaternion();
+    modelRoot.getWorldQuaternion(q);
+    offset.applyQuaternion(q);
+  }
+  return offset;
+}
+
+function getFootFrontPoint(side) {
+  const toeBone = side === 'left' ? leftToe : rightToe;
+  const footBone = side === 'left' ? leftFoot : rightFoot;
+  if (toeBone) return getWorld(toeBone, side === 'left' ? 'LT' : 'RT');
+  if (footBone) return getWorld(footBone, side === 'left' ? 'LF' : 'RF').add(modelForwardOffset(0.14));
+  const kneePoint = getWorld(side === 'left' ? leftKnee : rightKnee, side === 'left' ? 'L' : 'R');
+  return kneePoint.clone().add(new THREE.Vector3(0, -0.48, 0)).add(modelForwardOffset(0.18));
 }
 
 function planeCorners(mesh) {
@@ -925,46 +1016,79 @@ function setBeam(mesh, apex, corners) {
 function updateProjection(dt) {
   updateUserMovement(dt);
   if (modelRoot) modelRoot.position.copy(userPosition);
-  grid.position.x = userPosition.x;
-  grid.position.z = userPosition.z;
   if (modelRoot) modelRoot.updateMatrixWorld(true);
 
   const L = getWorld(leftKnee, 'L');
   const R = getWorld(rightKnee, 'R');
   const S = getWorld(spineBone, 'S');
   const activeKnee = kneeSide === 'left' ? L : R;
-  const kneeOffset = new THREE.Vector3(kneeSide === 'left' ? -0.03 : 0.03, 0.02, 0.02);
+  const kneeOffset = new THREE.Vector3(kneeSide === 'left' ? -0.03 : 0.03, -0.03, 0.03);
   const kneeModule = activeKnee.clone().add(kneeOffset);
-  kneeBoxL.position.copy(L).add(new THREE.Vector3(-0.03, 0.02, 0.02));
-  kneeBoxR.position.copy(R).add(new THREE.Vector3(0.03, 0.02, 0.02));
+  kneeBoxL.position.copy(L).add(new THREE.Vector3(-0.03, -0.03, 0.03));
+  kneeBoxR.position.copy(R).add(new THREE.Vector3(0.03, -0.03, 0.03));
   kneeBoxL.visible = kneeSide === 'left';
   kneeBoxR.visible = kneeSide === 'right';
 
   const bodyPos = modelRoot ? modelRoot.position.clone() : new THREE.Vector3();
-  const floorDistance = Math.abs(Number(by('floorZ').value || 100)) / 100;
+  const floorStart = Math.abs(Number(by('floorZ').value || 20)) / 100;
+  const floorDepth = Math.abs(Number(by('floorD').value || 160)) / 100;
   const wallDistance = Math.abs(Number(by('wallZ').value || 225)) / 100;
-  const eye = getWorld(eyeBone, 'E');
-  const userAnchor = new THREE.Vector3(bodyPos.x * 0.55 + eye.x * 0.45, 0, bodyPos.z * 0.65 + eye.z * 0.35);
-  const stableFloorTarget = new THREE.Vector3(userAnchor.x, 0.012, userAnchor.z - floorDistance);
-  const rawFloorTarget = new THREE.Vector3(
-    kneeModule.x + Math.sin(rawPhase * 1.7) * 0.08,
-    0.012,
-    kneeModule.z - floorDistance * 0.78 + Math.cos(rawPhase * 1.2) * 0.1
-  );
   const externalProjector = bodyPos.clone().add(new THREE.Vector3(-0.85, 1.3, 0.78));
   externalWallProjector.position.copy(externalProjector);
   backBox.visible = false;
   const baseWall = new THREE.Vector3(bodyPos.x, PRESETS[currentPreset].wall[1], bodyPos.z - wallDistance);
 
+  // --- Body forward direction in world space (yaw-aware) ---
+  // Mixamo xbot local forward = +Z; apply model quaternion to get world forward
+  const modelFwd = new THREE.Vector3(0, 0, 1);
+  if (modelRoot) modelFwd.applyQuaternion(modelRoot.quaternion);
+  modelFwd.y = 0;
+  if (modelFwd.lengthSq() < 0.001) modelFwd.set(0, 0, -1);
+  modelFwd.normalize();
+
+  // Floor center distance comes from sliders: near edge offset + half depth
+  const planeCenterDist = floorStart + floorDepth / 2;
+
+  // Angle-error feedback for stabilization fine-tuning (small ±30cm correction max)
+  const kneeH = Math.max(0.15, kneeModule.y);
+  const PROJ_TARGET_DEG = 52.5;
+  const angErr = PROJ_TARGET_DEG - smoothedFloorAngle;
+  const distCorrect = Math.max(-0.3, Math.min(0.3, angErr * 0.008 * kneeH));
+
+  // Spring target: slider-defined center + small angle correction
+  const angleTarget = new THREE.Vector3(
+    kneeModule.x + modelFwd.x * (planeCenterDist + distCorrect),
+    0.012,
+    kneeModule.z + modelFwd.z * (planeCenterDist + distCorrect)
+  );
+
+  // Rotate floor plane to always face body forward direction
+  floorPlane.rotation.y = THREE.MathUtils.degToRad(yaw - 180);
+
   if (stabilize) {
-    const alpha = currentPreset === 'running' ? 1 : Math.max(0.9, 1 - Math.exp(-(dt || 0.016) / tau));
-    qStabFloor.lerp(stableFloorTarget, alpha);
-    qStabWall.lerp(baseWall, alpha);
+    // --- 2nd-order spring-damper (models physical servo gimbal) ---
+    // Critical damping: K_d = 2√K_s  →  K_s=22, K_d≈9
+    const K_s = 22;
+    const K_d = 9;
+    const errVec = angleTarget.clone().sub(qStabFloor);
+    const acc = errVec.multiplyScalar(K_s).sub(stabVelocity.clone().multiplyScalar(K_d));
+    stabVelocity.addScaledVector(acc, dt);
+    if (stabVelocity.length() > 3.0) stabVelocity.setLength(3.0); // velocity clamp
+    qStabFloor.addScaledVector(stabVelocity, dt);
+
+    const wallAlpha = 1 - Math.exp(-dt / Math.max(0.03, tau));
+    qStabWall.lerp(baseWall, wallAlpha);
     floorPlane.position.copy(qStabFloor);
     wallPlane.position.copy(qStabWall);
   } else {
     rawPhase += dt * 6;
-    floorPlane.position.copy(rawFloorTarget);
+    // Raw mode: slider-defined center + instability noise
+    const rawTarget = new THREE.Vector3(
+      kneeModule.x + modelFwd.x * planeCenterDist + Math.sin(rawPhase * 1.7) * 0.08,
+      0.012,
+      kneeModule.z + modelFwd.z * planeCenterDist + Math.cos(rawPhase * 1.2) * 0.05
+    );
+    floorPlane.position.copy(rawTarget);
     wallPlane.position.copy(baseWall).add(new THREE.Vector3(S.x * 0.35, (S.y - 1.1) * 0.12, 0));
   }
 
@@ -972,17 +1096,25 @@ function updateProjection(dt) {
   wallGrid.position.z = wallPlane.position.z - 0.015;
   const fc = planeCorners(floorPlane);
   const wc = planeCorners(wallPlane);
+  const floorNearEdge = new THREE.Vector3(floorPlane.position.x, 0.012, floorPlane.position.z + floorPlane.scale.y / 2);
+  const floorRun = Math.hypot(kneeModule.x - floorNearEdge.x, kneeModule.z - floorNearEdge.z);
+  const rawFloorAngle = THREE.MathUtils.radToDeg(Math.atan2(Math.max(0.001, kneeModule.y - floorNearEdge.y), Math.max(0.001, floorRun)));
+  smoothedFloorAngle += (rawFloorAngle - smoothedFloorAngle) * 0.04;
+  lastFloorAngle = smoothedFloorAngle;
+  floorPlane.visible = floorBeamVisible;
   floorBeamL.visible = floorBeamVisible && kneeSide === 'left';
   floorBeamR.visible = floorBeamVisible && kneeSide === 'right';
   if (floorBeamVisible) {
     if (kneeSide === 'left') setBeam(floorBeamL, kneeModule, fc);
     else setBeam(floorBeamR, kneeModule, fc);
   }
-  wallBeam.visible = wallBeamVisible && currentPreset !== 'running';
-  externalWallProjector.visible = wallBeamVisible && currentPreset !== 'running';
-  if (wallBeamVisible && currentPreset !== 'running') setBeam(wallBeam, externalProjector, wc);
+  const wallOn = wallBeamVisible && currentPreset !== 'running';
+  wallPlane.visible = wallOn;
+  wallBeam.visible = wallOn;
+  externalWallProjector.visible = wallOn;
+  if (wallOn) setBeam(wallBeam, externalProjector, wc);
   updateScenarioVisibility();
-  by('floorM').textContent = `x ${(floorPlane.position.x * 100).toFixed(0)}, z ${(floorPlane.position.z * 100).toFixed(0)}cm`;
+  by('floorM').textContent = `시작 ${(floorStart * 100).toFixed(0)} / 끝 ${((floorStart + floorDepth) * 100).toFixed(0)}cm`;
 }
 
 function updateUserMovement(dt) {
@@ -994,25 +1126,22 @@ function updateUserMovement(dt) {
   if (moveKeys.has('KeyD') || moveKeys.has('ArrowRight')) manual.x += 1;
   if (manual.lengthSq() > 0) manual.normalize().multiplyScalar(step * dt);
   userPosition.add(manual);
-  if (currentPreset === 'running') userPosition.z -= step * dt;
 }
 
 function updateScenarioVisibility() {
   const running = currentPreset === 'running';
   wall.visible = !running;
   wallGrid.visible = !running;
-  wallPlane.visible = !running;
-  wallBeam.visible = !running && wallBeamVisible;
-  externalWallProjector.visible = !running && wallBeamVisible;
 }
 
 function updatePersonaAssessment() {
-  const floorZ = Number(by('floorZ').value || 100);
+  const floorZ = Number(by('floorZ').value || 20);
   const floorD = Number(by('floorD').value || 160);
-  const floorStart = floorZ - floorD / 2;
-  const floorEnd = floorZ + floorD / 2;
+  const floorStart = floorZ;
+  const floorEnd = floorZ + floorD;
   const coversCore = floorStart <= 20 && floorEnd >= 150;
   const coversAux = floorStart <= 20 && floorEnd >= 180;
+  const coversAngle = lastFloorAngle >= 45 && lastFloorAngle <= 60;
   const hasMotion = Boolean(activeAction);
   const hasModel = Boolean(modelLoaded);
   const running = currentPreset === 'running';
@@ -1035,6 +1164,10 @@ function updatePersonaAssessment() {
     verdict = '대체로 무리 없음';
     verdictClass = 'warn';
     reason = '핵심 범위는 맞지만 150~180cm 보조 범위를 조금 더 넓히면 좋습니다.';
+  } else if (!coversAngle) {
+    verdict = '각도 조정 필요';
+    verdictClass = 'warn';
+    reason = `현재 무릎 사출각 ${lastFloorAngle.toFixed(1)}°로, 권장 범위 45°~60°를 벗어납니다.`;
   } else if (!stabilize) {
     verdict = '사용 가능';
     verdictClass = 'warn';
@@ -1054,8 +1187,9 @@ function updatePersonaAssessment() {
 
   by('coreSight').textContent = '20~150cm';
   by('auxSight').textContent = '150~180cm';
-  by('projAngle').textContent = '45°~60°';
-  by('defaultSpan').textContent = '발 앞 20cm ~ 180cm';
+  by('projAngle').textContent = `${lastFloorAngle.toFixed(1)}°`;
+  by('projAngle').className = coversAngle ? 'ok' : 'warn';
+  by('defaultSpan').textContent = `발 앞 ${floorStart.toFixed(0)}cm ~ ${floorEnd.toFixed(0)}cm`;
 }
 
 function updateViewAvailability() {
@@ -1095,23 +1229,18 @@ function setView(v) {
 }
 
 function updateFirstPersonCamera(dt, snap = false) {
-  const speed = currentPreset === 'running' ? 1.05 : 0.72;
-  gaitPhase += dt * speed * (currentPreset === 'running' ? 8.2 : 5.4);
   const pitch = THREE.MathUtils.degToRad(Number(by('pitch').value || 0));
   const rawEye = getWorld(eyeBone, 'E');
   const bodyEye = userPosition.clone().add(new THREE.Vector3(0, modelHeight * 0.93, 0.08));
-  const targetEye = rawEye.lerp(bodyEye, 0.78);
-  const bobY = Math.sin(gaitPhase * 2) * (currentPreset === 'running' ? 0.018 : 0.008);
-  const swayX = Math.sin(gaitPhase) * (currentPreset === 'running' ? 0.012 : 0.005);
-  targetEye.add(new THREE.Vector3(swayX, bobY, 0));
+  // Heavily blend toward stable height — animation skeleton provides natural micro-movement
+  const targetEye = rawEye.lerp(bodyEye, 0.94);
 
   const lookTarget = userPosition.clone().add(new THREE.Vector3(0, 1.2 + Math.sin(pitch) * 0.9, -2.4));
-  const eyeAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.12);
-  const lookAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.18);
+  const eyeAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.25);
+  const lookAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.22);
   eyeFiltered.lerp(targetEye, eyeAlpha);
   lookFiltered.lerp(lookTarget, lookAlpha);
   camera.position.copy(eyeFiltered);
-  camera.up.set(Math.sin(gaitPhase) * 0.012, 1, 0).normalize();
   camera.lookAt(lookFiltered);
 }
 
@@ -1146,13 +1275,28 @@ function errText(e) {
 function animate() {
   requestAnimationFrame(animate);
   const dt = clock.getDelta();
-  if (mixer) mixer.update(dt);
-  if (currentView === 'eye') updateFirstPersonCamera(dt || 0.016);
-  else {
-    updateCameraFollow();
-    controls.update();
+  try {
+    if (mixer) mixer.update(dt);
+    if (currentView === 'eye') updateFirstPersonCamera(dt || 0.016);
+    else {
+      updateCameraFollow();
+      controls.update();
+    }
+    updateProjection(dt || 0.016);
+    const now = performance.now();
+    if (now - lastAssessmentTime >= 700) {
+      updatePersonaAssessment();
+      lastAssessmentTime = now;
+    }
+  } catch (e) {
+    const el = document.getElementById('runtimeError') || (() => {
+      const d = document.createElement('div');
+      d.id = 'runtimeError';
+      d.style.cssText = 'position:fixed;top:0;left:50%;transform:translateX(-50%);background:#c00;color:#fff;font:13px monospace;padding:8px 16px;z-index:9999;max-width:90vw;word-break:break-all;';
+      document.body.appendChild(d);
+      return d;
+    })();
+    el.textContent = `JS 오류: ${e.message} @ ${e.stack?.split('\n')[1]?.trim() || '?'}`;
   }
-  updateProjection(dt || 0.016);
-  updatePersonaAssessment();
   renderer.render(scene, camera);
 }

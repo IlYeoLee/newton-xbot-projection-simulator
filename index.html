@@ -115,12 +115,12 @@
 
             <section class="sec">
               <h2>05 투사 면 수치 <span>Surface tuning</span></h2>
-              <div class="field"><div class="row"><label>바닥 UI 가로폭</label><span class="value" id="floorWVal">95 cm</span></div><div class="pair"><input id="floorW" type="range" min="40" max="180" step="5" value="95"><input id="floorWN" type="number" min="40" max="180" step="5" value="95"></div></div>
-              <div class="field"><div class="row"><label>바닥 UI 세로길이</label><span class="value" id="floorDVal">135 cm</span></div><div class="pair"><input id="floorD" type="range" min="60" max="220" step="5" value="135"><input id="floorDN" type="number" min="60" max="220" step="5" value="135"></div></div>
-              <div class="field"><div class="row"><label>바닥 UI 앞쪽 거리</label><span class="value" id="floorZVal">115 cm</span></div><div class="pair"><input id="floorZ" type="range" min="60" max="220" step="5" value="115"><input id="floorZN" type="number" min="60" max="220" step="5" value="115"></div></div>
-              <div class="field"><div class="row"><label>벽 UI 폭</label><span class="value" id="wallWVal">42 cm</span></div><div class="pair"><input id="wallW" type="range" min="25" max="120" step="5" value="42"><input id="wallWN" type="number" min="25" max="120" step="5" value="42"></div></div>
-              <div class="field"><div class="row"><label>벽 UI 높이</label><span class="value" id="wallHVal">155 cm</span></div><div class="pair"><input id="wallH" type="range" min="60" max="240" step="5" value="155"><input id="wallHN" type="number" min="60" max="240" step="5" value="155"></div></div>
-              <div class="field"><div class="row"><label>벽까지 거리</label><span class="value" id="wallZVal">225 cm</span></div><div class="pair"><input id="wallZ" type="range" min="130" max="360" step="5" value="225"><input id="wallZN" type="number" min="130" max="360" step="5" value="225"></div></div>
+              <div class="field"><div class="row"><label>바닥 UI 가로폭</label><span class="value" id="floorWVal">95 cm</span></div><div class="pair"><input id="floorW" type="range" min="40" max="300" step="5" value="95"><input id="floorWN" type="number" min="40" max="300" step="5" value="95"></div></div>
+              <div class="field"><div class="row"><label>바닥 UI 세로길이</label><span class="value" id="floorDVal">160 cm</span></div><div class="pair"><input id="floorD" type="range" min="60" max="300" step="5" value="160"><input id="floorDN" type="number" min="60" max="300" step="5" value="160"></div></div>
+              <div class="field"><div class="row"><label>바닥 UI 시작 거리</label><span class="value" id="floorZVal">20 cm</span></div><div class="pair"><input id="floorZ" type="range" min="20" max="300" step="5" value="20"><input id="floorZN" type="number" min="20" max="300" step="5" value="20"></div></div>
+              <div class="field"><div class="row"><label>벽 UI 폭</label><span class="value" id="wallWVal">200 cm</span></div><div class="pair"><input id="wallW" type="range" min="25" max="300" step="5" value="200"><input id="wallWN" type="number" min="25" max="300" step="5" value="200"></div></div>
+              <div class="field"><div class="row"><label>벽 UI 높이</label><span class="value" id="wallHVal">200 cm</span></div><div class="pair"><input id="wallH" type="range" min="60" max="300" step="5" value="200"><input id="wallHN" type="number" min="60" max="300" step="5" value="200"></div></div>
+              <div class="field"><div class="row"><label>벽까지 거리</label><span class="value" id="wallZVal">225 cm</span></div><div class="pair"><input id="wallZ" type="range" min="130" max="300" step="5" value="225"><input id="wallZN" type="number" min="130" max="300" step="5" value="225"></div></div>
             </section>
 
             <section class="sec">
@@ -177,9 +177,15 @@
             </section>
 
             <section class="sec">
-              <h2>07 1인칭 시야 <span>Camera tuning</span></h2>
-              <div class="field"><div class="row"><label>FOV</label><span class="value" id="fovVal">55°</span></div><div class="pair"><input id="fov" type="range" min="35" max="85" step="1" value="55"><input id="fovN" type="number" min="35" max="85" step="1" value="55"></div></div>
-              <div class="field"><div class="row"><label>고개 숙임 각도</label><span class="value" id="pitchVal">0°</span></div><div class="pair"><input id="pitch" type="range" min="-35" max="20" step="1" value="0"><input id="pitchN" type="number" min="-35" max="20" step="1" value="0"></div></div>
+              <h2>07 1인칭 시야 <span>Human eye · 28mm equiv</span></h2>
+              <div class="grid3 eye-mode-grid">
+                <button data-eye-mode="neutral" class="active" type="button">정면 중심</button>
+                <button data-eye-mode="active" type="button">운동 기본</button>
+                <button data-eye-mode="inspect" type="button">바닥 확인</button>
+              </div>
+              <div class="field"><div class="row"><label>수직 FOV</label><span class="value" id="fovVal">50°</span></div><div class="pair"><input id="fov" type="range" min="15" max="75" step="1" value="50"><input id="fovN" type="number" min="15" max="75" step="1" value="50"></div></div>
+              <div class="field"><div class="row"><label>고개 숙임</label><span class="value" id="pitchVal">-18°</span></div><div class="pair"><input id="pitch" type="range" min="-40" max="15" step="1" value="-18"><input id="pitchN" type="number" min="-40" max="15" step="1" value="-18"></div></div>
+              <p class="mini">50° 수직 FOV ≈ 28mm 풀프레임 (자연스러운 원근감). 15°≈50mm, 46°≈24mm. 달릴 때 자연 시선은 -15°~-20°.</p>
             </section>
           </div>
         </aside>
@@ -197,11 +203,11 @@
             <div class="card-body">
             <div class="metric"><span>핵심 시야 범위</span><span id="coreSight" class="mono">20~150cm</span></div>
             <div class="metric"><span>보조 시야 범위</span><span id="auxSight" class="mono">150~180cm</span></div>
-            <div class="metric"><span>무릎 사출각</span><span id="projAngle" class="ok">45°~60°</span></div>
+            <div class="metric"><span>무릎 사출각</span><span id="projAngle" class="ok">-</span></div>
             <div class="metric"><span>기본 커버</span><span id="defaultSpan" class="mono">발 앞 20cm ~ 180cm</span></div>
             <div class="metric"><span>선택 무릎</span><span id="kneeSideM" class="ok">오른쪽 무릎 1개</span></div>
             <div class="metric"><span>안정화</span><span id="stabState" class="ok">ON</span></div>
-            <div class="metric"><span>바닥 UI 중심</span><span id="floorM" class="mono">-</span></div>
+            <div class="metric"><span>바닥 시작/끝</span><span id="floorM" class="mono">-</span></div>
             </div>
           </div>
         </div>

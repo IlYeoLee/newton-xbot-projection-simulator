@@ -112,7 +112,6 @@ body.hide-left.hide-right .main { justify-content: center; }
   margin-bottom: 10px;
 }
 .dev-load { display: none; }
-.advanced { display: none; }
 .sec h2 {
   font-size: 13px;
   margin: 0 0 10px;
@@ -125,6 +124,7 @@ body.hide-left.hide-right .main { justify-content: center; }
 .row label, .field label { font-size: 11px; font-weight: 850; }
 .value { font-size: 11px; color: var(--red); font-weight: 950; font-variant-numeric: tabular-nums; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .preset { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
 .field { margin: 9px 0; }
 .pair { display: grid; grid-template-columns: 1fr 82px; gap: 8px; align-items: center; }
@@ -138,6 +138,8 @@ body.hide-left.hide-right .main { justify-content: center; }
 .surface-tab {
   width: 100%;
 }
+.eye-mode-grid { margin-bottom: 10px; }
+.advanced-controls { display: none; }
 
 input[type="range"] { width: 100%; accent-color: var(--red); }
 input[type="file"], select, input[type="number"] {
