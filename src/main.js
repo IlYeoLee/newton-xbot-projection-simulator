@@ -2,6 +2,14 @@ import './style.css';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+import xbotModelUrl from '../assets/xbot.fbx?url';
+import runningMotionUrl from '../assets/anim-running.fbx?url';
+import standardRunMotionUrl from '../assets/anim-standard-run.fbx?url';
+import hookMotionUrl from '../assets/anim-hook.fbx?url';
+import mmaKickMotionUrl from '../assets/anim-mma-kick.fbx?url';
+import kettlebellSwingMotionUrl from '../assets/anim-kettlebell-swing.fbx?url';
+import jumpingJacksMotionUrl from '../assets/anim-jumping-jacks.fbx?url';
+import hipHopMotionUrl from '../assets/anim-hiphop.fbx?url';
 
 let scene;
 let camera;
@@ -84,18 +92,17 @@ const surfaceTextures = {
 };
 
 const animRegistry = new Map();
-const assetUrl = (path) => new URL(path, import.meta.url).href;
 
 const ASSETS = {
-  model: assetUrl('../assets/xbot.fbx'),
+  model: xbotModelUrl,
   motions: {
-    Running: assetUrl('../assets/anim-running.fbx'),
-    'Standard Run': assetUrl('../assets/anim-standard-run.fbx'),
-    Hook: assetUrl('../assets/anim-hook.fbx'),
-    'MMA Kick': assetUrl('../assets/anim-mma-kick.fbx'),
-    'Kettlebell Swing': assetUrl('../assets/anim-kettlebell-swing.fbx'),
-    'Start Jumping Jacks': assetUrl('../assets/anim-jumping-jacks.fbx'),
-    'Hip Hop Dancing': assetUrl('../assets/anim-hiphop.fbx')
+    Running: runningMotionUrl,
+    'Standard Run': standardRunMotionUrl,
+    Hook: hookMotionUrl,
+    'MMA Kick': mmaKickMotionUrl,
+    'Kettlebell Swing': kettlebellSwingMotionUrl,
+    'Start Jumping Jacks': jumpingJacksMotionUrl,
+    'Hip Hop Dancing': hipHopMotionUrl
   }
 };
 
