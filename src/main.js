@@ -119,6 +119,11 @@ function by(id) {
   return document.getElementById(id);
 }
 
+function setTextIfPresent(id, value) {
+  const el = by(id);
+  if (el) el.textContent = value;
+}
+
 function log(message) {
   by('log').textContent = `${message}\n${by('log').textContent}`.slice(0, 1800);
 }
@@ -605,10 +610,10 @@ function findBones() {
   rightKnee = findBoneByCandidates(modelRoot, ['RightLowerLeg', 'mixamorigRightLeg', 'mixamorig:RightLeg', 'RightLeg', 'RightKnee']);
   spineBone = findBoneByCandidates(modelRoot, ['Spine2', 'Spine1', 'mixamorigSpine', 'mixamorig:Hips', 'Hips', 'Spine']);
   eyeBone = findBoneByCandidates(modelRoot, ['mixamorigHead', 'Head', 'Neck']);
-  by('leftBone').textContent = leftKnee ? leftKnee.name : 'fallback';
-  by('rightBone').textContent = rightKnee ? rightKnee.name : 'fallback';
-  by('spineBone').textContent = spineBone ? spineBone.name : 'fallback';
-  by('eyeBone').textContent = eyeBone ? eyeBone.name : 'height fallback';
+  setTextIfPresent('leftBone', leftKnee ? leftKnee.name : 'fallback');
+  setTextIfPresent('rightBone', rightKnee ? rightKnee.name : 'fallback');
+  setTextIfPresent('spineBone', spineBone ? spineBone.name : 'fallback');
+  setTextIfPresent('eyeBone', eyeBone ? eyeBone.name : 'height fallback');
 }
 
 function setPreset(p, apply = true) {
