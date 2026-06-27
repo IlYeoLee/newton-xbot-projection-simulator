@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NEWTON X Bot Projection Stabilizer Simulator</title>
+    <script>
+      if (location.protocol === 'file:' && !location.pathname.includes('/dist/index.html')) {
+        location.replace('./dist/index.html');
+      }
+    </script>
+  </head>
+  <body>
+    <div id="view"></div>
+    <div class="ui">
+      <div class="top">
+        <div class="brand">
+          <div class="logo">N</div>
+          <div>
+            <div class="title">NEWTON X Bot Projection Stabilizer Simulator</div>
+            <div class="sub">실제 X Bot FBX + Mixamo FBX · 한쪽 무릎 바닥 투사 · 뒤쪽 기준점 벽면 투사</div>
+          </div>
+        </div>
+        <div class="views">
+          <button id="toggleLeft" type="button">설정 접기</button>
+          <button id="toggleRight" type="button">상태 접기</button>
+          <button id="resetSettings" type="button">설정 초기화</button>
+          <button id="view-orbit" class="active" data-view="orbit">자유 3D</button>
+          <button id="view-side" data-view="side">측면</button>
+          <button id="view-top" data-view="top">머리 위</button>
+          <button id="view-eye" data-view="eye">1인칭 시선</button>
+          <button id="view-floor" data-view="floor">바닥 확인</button>
+          <button id="view-wall" data-view="wall">벽면 확인</button>
+        </div>
+      </div>
+
+      <div class="main">
+        <aside class="panel left">
+          <div class="scroll">
+            <section class="sec dev-load">
+              <h2>00 FBX 로드 <span>assets fetch / 직접 선택</span></h2>
+              <button id="reloadAssets">assets 다시 로드</button>
+              <p class="mini">Vite 로컬 서버에서 열면 정리된 assets 파일을 자동으로 fetch합니다. 실패하면 아래 파일 선택 fallback을 사용하세요.</p>
+              <div class="field">
+                <label>실제 X Bot 모델 FBX</label>
+                <input id="modelFile" type="file" accept=".fbx" />
+              </div>
+              <div class="field">
+                <label>실제 xbot@ 동작 FBX 여러 개</label>
+                <input id="animFiles" type="file" accept=".fbx" multiple />
+              </div>
+              <div class="status" id="log">초기화 중...</div>
+            </section>
+
+            <section class="sec">
+              <h2>01 운동군 프리셋 <span>Preset filters motion list</span></h2>
+              <div class="preset">
+                <button id="pre-running" data-preset="running">러닝 / 걷기</button>
+                <button id="pre-boxing" data-preset="boxing">복싱 / 격투</button>
+                <button id="pre-fitness" data-preset="fitness">홈트 / 근력</button>
+                <button id="pre-dance" data-preset="dance">댄스 / 리듬</button>
+              </div>
+            </section>
+
+            <section class="sec">
+              <h2>02 실제 X Bot 동작 <span>FBX animation</span></h2>
+              <select id="motionSelect"></select>
+              <div class="grid2 action-row">
+                <button id="playPause">재생/정지</button>
+                <button id="restartMotion">처음부터</button>
+              </div>
+              <div class="field">
+                <div class="row"><label>애니메이션 속도</label><span class="value" id="speedVal">1.00x</span></div>
+                <div class="pair"><input id="speed" type="range" min="0.2" max="2.0" step="0.05" value="1"><input id="speedN" type="number" min="0.2" max="2" step="0.05" value="1"></div>
+              </div>
+            </section>
+
+            <section class="sec advanced">
+              <h2>03 모델 방향 / 스케일 <span>X Bot align</span></h2>
+              <div class="grid2">
+                <button data-rotate="-90">-90°</button>
+                <button data-rotate="90">+90°</button>
+                <button data-rotate="180">180°</button>
+                <button id="flipForward">앞/뒤 반전</button>
+              </div>
+              <div class="field">
+                <div class="row"><label>방향 보정</label><span class="value" id="yawVal">180°</span></div>
+                <div class="pair"><input id="yaw" type="range" min="-180" max="180" step="5" value="180"><input id="yawN" type="number" min="-180" max="180" step="5" value="180"></div>
+              </div>
+              <div class="field">
+                <div class="row"><label>표시 키</label><span class="value" id="heightVal">170 cm</span></div>
+                <div class="pair"><input id="height" type="range" min="140" max="205" step="1" value="170"><input id="heightN" type="number" min="140" max="205" step="1" value="170"></div>
+              </div>
+            </section>
+
+            <section class="sec">
+              <h2>04 투사 안정화 <span>Projection logic</span></h2>
+              <div class="grid2">
+                <button id="stabOn" class="active">안정화 ON</button>
+                <button id="stabOff">안정화 OFF</button>
+              </div>
+              <div class="field">
+                <label>무릎 빔프로젝터 위치</label>
+                <select id="kneeSide">
+                  <option value="right" selected>오른쪽 무릎 1개</option>
+                  <option value="left">왼쪽 무릎 1개</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="row"><label>보정 반응 속도</label><span class="value" id="tauVal">0.18s</span></div>
+                <div class="pair"><input id="tau" type="range" min="0.03" max="0.6" step="0.01" value="0.18"><input id="tauN" type="number" min="0.03" max="0.6" step="0.01" value="0.18"></div>
+              </div>
+              <p class="mini">값이 낮으면 무릎/몸 움직임을 빠르게 따라가고, 높으면 흔들림을 더 부드럽게 줄입니다. ON은 사용자 앞쪽 목표점을 따라가며 보정하고, OFF는 무릎 흔들림이 더 직접적으로 보입니다.</p>
+            </section>
+
+            <section class="sec">
+              <h2>05 투사 면 수치 <span>Surface tuning</span></h2>
+              <div class="field"><div class="row"><label>바닥 UI 가로폭</label><span class="value" id="floorWVal">95 cm</span></div><div class="pair"><input id="floorW" type="range" min="40" max="180" step="5" value="95"><input id="floorWN" type="number" min="40" max="180" step="5" value="95"></div></div>
+              <div class="field"><div class="row"><label>바닥 UI 세로길이</label><span class="value" id="floorDVal">135 cm</span></div><div class="pair"><input id="floorD" type="range" min="60" max="220" step="5" value="135"><input id="floorDN" type="number" min="60" max="220" step="5" value="135"></div></div>
+              <div class="field"><div class="row"><label>바닥 UI 앞쪽 거리</label><span class="value" id="floorZVal">115 cm</span></div><div class="pair"><input id="floorZ" type="range" min="60" max="220" step="5" value="115"><input id="floorZN" type="number" min="60" max="220" step="5" value="115"></div></div>
+              <div class="field"><div class="row"><label>벽 UI 폭</label><span class="value" id="wallWVal">42 cm</span></div><div class="pair"><input id="wallW" type="range" min="25" max="120" step="5" value="42"><input id="wallWN" type="number" min="25" max="120" step="5" value="42"></div></div>
+              <div class="field"><div class="row"><label>벽 UI 높이</label><span class="value" id="wallHVal">155 cm</span></div><div class="pair"><input id="wallH" type="range" min="60" max="240" step="5" value="155"><input id="wallHN" type="number" min="60" max="240" step="5" value="155"></div></div>
+              <div class="field"><div class="row"><label>벽까지 거리</label><span class="value" id="wallZVal">225 cm</span></div><div class="pair"><input id="wallZ" type="range" min="130" max="360" step="5" value="225"><input id="wallZN" type="number" min="130" max="360" step="5" value="225"></div></div>
+            </section>
+
+            <section class="sec">
+              <h2>06 가독성 테스트 <span>Text / graphic / beam</span></h2>
+              <div class="grid2">
+                <button id="floorBeamToggle" class="active" type="button">바닥 빔 ON</button>
+                <button id="wallBeamToggle" class="active" type="button">벽면 빔 ON</button>
+              </div>
+              <div class="surface-tabs">
+                <button class="surface-tab active" data-surface="floor" type="button">바닥</button>
+                <button class="surface-tab" data-surface="wall" type="button">벽</button>
+              </div>
+              <div class="field">
+                <label>텍스트</label>
+                <input id="surfaceText" type="text" value="텍스트를 입력하세요" />
+              </div>
+              <div class="field">
+                <div class="row"><label>글자 크기</label><span class="value" id="surfaceTextSizeVal">28 px</span></div>
+                <div class="pair"><input id="surfaceTextSize" type="range" min="10" max="96" step="1" value="28"><input id="surfaceTextSizeN" type="number" min="10" max="96" step="1" value="28"></div>
+              </div>
+              <div class="field">
+                <div class="row"><label>텍스트 위치 X</label><span class="value" id="surfaceTextXVal">0 cm</span></div>
+                <div class="pair"><input id="surfaceTextX" type="range" min="-80" max="80" step="1" value="0"><input id="surfaceTextXN" type="number" min="-80" max="80" step="1" value="0"></div>
+              </div>
+              <div class="field">
+                <div class="row"><label>텍스트 위치 Y</label><span class="value" id="surfaceTextYVal">0 cm</span></div>
+                <div class="pair"><input id="surfaceTextY" type="range" min="-80" max="80" step="1" value="0"><input id="surfaceTextYN" type="number" min="-80" max="80" step="1" value="0"></div>
+              </div>
+              <div class="field">
+                <label>그래픽 종류</label>
+                <select id="surfaceGraphicType">
+                  <option value="footprint" selected>발자국</option>
+                  <option value="image">이미지</option>
+                  <option value="none">없음</option>
+                </select>
+              </div>
+              <div class="field">
+                <div class="row"><label>그래픽 크기</label><span class="value" id="surfaceGraphicSizeVal">250 mm</span></div>
+                <div class="pair"><input id="surfaceGraphicSize" type="range" min="120" max="400" step="5" value="250"><input id="surfaceGraphicSizeN" type="number" min="120" max="400" step="5" value="250"></div>
+              </div>
+              <div class="field">
+                <div class="row"><label>그래픽 위치 X</label><span class="value" id="surfaceGraphicXVal">0 cm</span></div>
+                <div class="pair"><input id="surfaceGraphicX" type="range" min="-80" max="80" step="1" value="0"><input id="surfaceGraphicXN" type="number" min="-80" max="80" step="1" value="0"></div>
+              </div>
+              <div class="field">
+                <div class="row"><label>그래픽 위치 Y</label><span class="value" id="surfaceGraphicYVal">0 cm</span></div>
+                <div class="pair"><input id="surfaceGraphicY" type="range" min="-80" max="80" step="1" value="0"><input id="surfaceGraphicYN" type="number" min="-80" max="80" step="1" value="0"></div>
+              </div>
+              <div class="field">
+                <label>이미지 추가 (png/jpg)</label>
+                <input id="surfaceImageFile" type="file" accept="image/png,image/jpeg" />
+              </div>
+              <p class="mini">가이드: 바닥 텍스트는 24px 이상, 벽 텍스트는 28px 이상부터 읽기 쉬운 편입니다. 발자국 그래픽은 250mm를 기본값으로 두고, 최소 크기를 줄여가며 가독성과 식별성을 확인하세요.</p>
+            </section>
+
+            <section class="sec advanced">
+              <h2>06 1인칭 시야 <span>Camera tuning</span></h2>
+              <div class="field"><div class="row"><label>FOV</label><span class="value" id="fovVal">55°</span></div><div class="pair"><input id="fov" type="range" min="35" max="85" step="1" value="55"><input id="fovN" type="number" min="35" max="85" step="1" value="55"></div></div>
+              <div class="field"><div class="row"><label>고개 숙임 각도</label><span class="value" id="pitchVal">0°</span></div><div class="pair"><input id="pitch" type="range" min="-35" max="20" step="1" value="0"><input id="pitchN" type="number" min="-35" max="20" step="1" value="0"></div></div>
+            </section>
+          </div>
+        </aside>
+
+        <div class="right">
+          <div class="panel card" id="assessmentCard"><h3><span>페르소나 판단</span><button class="card-toggle" type="button" data-card="assessmentCard">접기</button></h3>
+            <div class="card-body">
+            <div class="metric"><span>판단</span><span id="personaVerdict" class="ok">무리 없음</span></div>
+            <div class="metric"><span>이유</span><span id="personaReason">발 앞 20~180cm가 기본 범위에 들어옵니다.</span></div>
+            <div class="metric"><span>현재 상태</span><span id="personaState" class="mono">모델 미로드 · 동작 미적용</span></div>
+            <div class="metric"><span>시선 메모</span><span id="personaNote">1인칭은 과한 흔들림 없이 전방을 유지합니다.</span></div>
+            </div>
+          </div>
+          <div class="panel card" id="coverageCard"><h3><span>기본 범위</span><button class="card-toggle" type="button" data-card="coverageCard">접기</button></h3>
+            <div class="card-body">
+            <div class="metric"><span>핵심 시야 범위</span><span id="coreSight" class="mono">20~150cm</span></div>
+            <div class="metric"><span>보조 시야 범위</span><span id="auxSight" class="mono">150~180cm</span></div>
+            <div class="metric"><span>무릎 사출각</span><span id="projAngle" class="ok">45°~60°</span></div>
+            <div class="metric"><span>기본 커버</span><span id="defaultSpan" class="mono">발 앞 20cm ~ 180cm</span></div>
+            <div class="metric"><span>선택 무릎</span><span id="kneeSideM" class="ok">오른쪽 무릎 1개</span></div>
+            <div class="metric"><span>안정화</span><span id="stabState" class="ok">ON</span></div>
+            <div class="metric"><span>바닥 UI 중심</span><span id="floorM" class="mono">-</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <span>실행: <b class="mono">npm install</b> → <b class="mono">npm run dev</b></span>
+        <span>Vite · Three.js · FBXLoader · fflate</span>
+      </div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
