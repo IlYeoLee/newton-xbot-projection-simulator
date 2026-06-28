@@ -199,6 +199,26 @@ input::file-selector-button {
   overflow: auto;
 }
 
+.hw-group {
+  font-size: 10px;
+  font-weight: 950;
+  color: var(--red);
+  letter-spacing: 0.03em;
+  margin: 10px 0 2px;
+  text-transform: uppercase;
+}
+.hw-group:first-child { margin-top: 0; }
+.hw-formula {
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #c8c8c8;
+  padding: 4px 0;
+  border-top: 1px solid rgba(255,255,255,0.06);
+  line-height: 1.5;
+}
+.hw-formula sub { font-size: 8px; }
+.hw-eq-note { color: var(--muted); font-size: 10px; }
+
 @media (max-width: 900px) {
   body { overflow: auto; }
   .ui { position: absolute; min-height: 100vh; }

@@ -70,6 +70,24 @@ let smoothedFloorAngle = 45;
 let lastAssessmentTime = 0;
 const stabVelocity = new THREE.Vector3(0, 0, 0);
 
+// HW spec panel tracking
+const HW_BUF = 300; // ~5s at 60fps
+const hwBufX = new Float32Array(HW_BUF);
+const hwBufZ = new Float32Array(HW_BUF);
+let hwBufIdx = 0;
+let hwBufCount = 0;
+let hwPrevPitch = 52.5;
+let hwPrevPitchVel = 0;
+let hwMaxPitchVel = 0;
+let hwMaxPitchAcc = 0;
+let hwPitchMin = 90;
+let hwPitchMax = 0;
+let hwMaxErr = 0;
+let hwCovHits = 0;
+let hwCovTotal = 0;
+let hwLastDom = 0;
+const cachedModelFwd = new THREE.Vector3(0, 0, -1);
+
 const DEFAULT_SURFACE_STATE = {
   floor: {
     text: '텍스트를 입력하세요',
@@ -569,6 +587,7 @@ function refreshMotionSelect() {
 
 async function selectMotion(name) {
   currentMotion = name;
+  resetHWStats();
   const entry = animRegistry.get(name);
   if (!entry) {
     log(`동작 파일이 없습니다: ${name}`);
@@ -787,6 +806,7 @@ function bind() {
   by('toggleLeft').addEventListener('click', toggleLeftPanel);
   by('toggleRight').addEventListener('click', toggleRightPanel);
   by('resetSettings').addEventListener('click', resetSettings);
+  by('hwResetMax').addEventListener('click', resetHWStats);
   by('toggleLeft').classList.add('active');
   by('toggleRight').classList.add('active');
   window.addEventListener('keydown', (e) => {
@@ -872,6 +892,7 @@ function resetSettings() {
   moveKeys.clear();
   userPosition.set(0, 0, 0);
   stabVelocity.set(0, 0, 0);
+  resetHWStats();
   gaitPhase = 0;
   rawPhase = 0;
   floorBeamVisible = true;
@@ -1045,6 +1066,7 @@ function updateProjection(dt) {
   modelFwd.y = 0;
   if (modelFwd.lengthSq() < 0.001) modelFwd.set(0, 0, -1);
   modelFwd.normalize();
+  cachedModelFwd.copy(modelFwd);
 
   // Floor center distance comes from sliders: near edge offset + half depth
   const planeCenterDist = floorStart + floorDepth / 2;
@@ -1115,6 +1137,7 @@ function updateProjection(dt) {
   if (wallOn) setBeam(wallBeam, externalProjector, wc);
   updateScenarioVisibility();
   by('floorM').textContent = `시작 ${(floorStart * 100).toFixed(0)} / 끝 ${((floorStart + floorDepth) * 100).toFixed(0)}cm`;
+  updateHWPanel(dt, kneeModule, qStabFloor, planeCenterDist, floorStart, floorDepth, Number(by('floorW').value) / 100);
 }
 
 function updateUserMovement(dt) {
@@ -1132,6 +1155,92 @@ function updateScenarioVisibility() {
   const running = currentPreset === 'running';
   wall.visible = !running;
   wallGrid.visible = !running;
+}
+
+function resetHWStats() {
+  hwBufIdx = 0; hwBufCount = 0;
+  hwBufX.fill(0); hwBufZ.fill(0);
+  hwPrevPitch = 52.5; hwPrevPitchVel = 0;
+  hwMaxPitchVel = 0; hwMaxPitchAcc = 0;
+  hwPitchMin = 90; hwPitchMax = 0;
+  hwMaxErr = 0; hwCovHits = 0; hwCovTotal = 0;
+}
+
+function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, floorDepth, floorW) {
+  if (!modelLoaded) return;
+  const kneeH = Math.max(0.15, kneeModule.y);
+  const safedt = Math.max(0.005, dt);
+
+  // ① Servo / gimbal angles
+  const dx = stabPos.x - kneeModule.x;
+  const dz = stabPos.z - kneeModule.z;
+  const dh = Math.max(0.01, Math.sqrt(dx * dx + dz * dz));
+  const pitchDeg = THREE.MathUtils.radToDeg(Math.atan2(kneeH, dh));
+  const pitchVel = Math.abs(pitchDeg - hwPrevPitch) / safedt;
+  const pitchAcc = Math.abs(pitchVel - hwPrevPitchVel) / safedt;
+
+  if (hwBufCount > 2 && pitchVel < 400) {
+    hwMaxPitchVel = Math.max(hwMaxPitchVel, pitchVel);
+    hwMaxPitchAcc = Math.max(hwMaxPitchAcc, pitchAcc);
+    hwPitchMin = Math.min(hwPitchMin, pitchDeg);
+    hwPitchMax = Math.max(hwPitchMax, pitchDeg);
+  }
+  hwPrevPitch = pitchDeg;
+  hwPrevPitchVel = pitchVel;
+
+  // ③ Position error vs ideal no-body-motion target
+  const idealX = kneeModule.x + cachedModelFwd.x * planeCenterDist;
+  const idealZ = kneeModule.z + cachedModelFwd.z * planeCenterDist;
+  const errX = (stabPos.x - idealX) * 100;
+  const errZ = (stabPos.z - idealZ) * 100;
+  const instErr = Math.sqrt(errX * errX + errZ * errZ);
+  if (hwBufCount > 2) hwMaxErr = Math.max(hwMaxErr, instErr);
+
+  hwBufX[hwBufIdx] = errX;
+  hwBufZ[hwBufIdx] = errZ;
+  hwBufIdx = (hwBufIdx + 1) % HW_BUF;
+  hwBufCount = Math.min(hwBufCount + 1, HW_BUF);
+  hwCovTotal++;
+  if (instErr <= 5) hwCovHits++;
+
+  // DOM update throttled to 250ms
+  const now = performance.now();
+  if (now - hwLastDom < 250) return;
+  hwLastDom = now;
+
+  // RMS over buffer
+  let sumX2 = 0, sumZ2 = 0;
+  for (let i = 0; i < hwBufCount; i++) { sumX2 += hwBufX[i] ** 2; sumZ2 += hwBufZ[i] ** 2; }
+  const rmsX = Math.sqrt(sumX2 / hwBufCount);
+  const rmsZ = Math.sqrt(sumZ2 / hwBufCount);
+  const cov = hwCovTotal > 0 ? (hwCovHits / hwCovTotal * 100) : 100;
+
+  // ② Lens / throw specs
+  const nearCm = floorStart * 100;
+  const farCm = (floorStart + floorDepth) * 100;
+  const throwRatio = (kneeH / Math.max(0.01, floorW)).toFixed(2);
+  const hFovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan2(floorW / 2, Math.max(0.01, floorStart)));
+  const vFovDeg = THREE.MathUtils.radToDeg(Math.atan2(floorStart + floorDepth, kneeH))
+               - THREE.MathUtils.radToDeg(Math.atan2(floorStart, kneeH));
+
+  setTextIfPresent('hw-pitch-angle', `${pitchDeg.toFixed(1)}°`);
+  setTextIfPresent('hw-pitch-vel', `${pitchVel.toFixed(1)} °/s`);
+  setTextIfPresent('hw-pitch-vel-max', `${hwMaxPitchVel.toFixed(1)} °/s`);
+  setTextIfPresent('hw-pitch-acc-max', `${hwMaxPitchAcc.toFixed(0)} °/s²`);
+  setTextIfPresent('hw-pitch-range', hwPitchMin <= hwPitchMax ? `${hwPitchMin.toFixed(1)}° ~ ${hwPitchMax.toFixed(1)}°` : '-');
+  setTextIfPresent('hw-near-dist', `${nearCm.toFixed(0)} cm`);
+  setTextIfPresent('hw-far-dist', `${farCm.toFixed(0)} cm`);
+  setTextIfPresent('hw-throw-ratio', `${throwRatio} (h/W)`);
+  setTextIfPresent('hw-fov-h', `${hFovDeg.toFixed(1)}°`);
+  setTextIfPresent('hw-fov-v', `${vFovDeg.toFixed(1)}°`);
+  setTextIfPresent('hw-rms-x', `${rmsX.toFixed(1)} cm`);
+  setTextIfPresent('hw-rms-z', `${rmsZ.toFixed(1)} cm`);
+  setTextIfPresent('hw-max-err', `${hwMaxErr.toFixed(1)} cm`);
+  const covEl = document.getElementById('hw-coverage');
+  if (covEl) {
+    covEl.textContent = `${cov.toFixed(1)}%`;
+    covEl.className = cov >= 95 ? 'ok' : cov >= 80 ? 'warn' : 'bad';
+  }
 }
 
 function updatePersonaAssessment() {

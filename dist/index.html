@@ -9,8 +9,8 @@
         location.replace('./dist/index.html');
       }
     </script>
-    <script type="module" crossorigin src="./assets/index-nQvomcPY.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-CzJoH4xW.css">
+    <script type="module" crossorigin src="./assets/index-C8-aDw9Y.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DEV8YMMc.css">
   </head>
   <body>
     <div id="view"></div>
@@ -210,6 +210,39 @@
             <div class="metric"><span>선택 무릎</span><span id="kneeSideM" class="ok">오른쪽 무릎 1개</span></div>
             <div class="metric"><span>안정화</span><span id="stabState" class="ok">ON</span></div>
             <div class="metric"><span>바닥 시작/끝</span><span id="floorM" class="mono">-</span></div>
+            </div>
+          </div>
+
+          <div class="panel card" id="hwSpecCard"><h3><span>HW 스펙 (실시간)</span><button class="card-toggle" type="button" data-card="hwSpecCard">접기</button></h3>
+            <div class="card-body">
+              <div class="hw-group">① 서보 / 짐벌</div>
+              <div class="metric"><span>현재 투사각 θ</span><span id="hw-pitch-angle" class="mono">-</span></div>
+              <div class="metric"><span>현재 각속도</span><span id="hw-pitch-vel" class="mono">-</span></div>
+              <div class="metric"><span>최대 각속도 ★</span><span id="hw-pitch-vel-max" class="warn mono">-</span></div>
+              <div class="metric"><span>최대 각가속도 ★</span><span id="hw-pitch-acc-max" class="warn mono">-</span></div>
+              <div class="metric"><span>보정 범위 (세션)</span><span id="hw-pitch-range" class="mono">-</span></div>
+
+              <div class="hw-group">② 프로젝터 렌즈</div>
+              <div class="metric"><span>최근접 투사거리</span><span id="hw-near-dist" class="mono">-</span></div>
+              <div class="metric"><span>최원거리 투사거리</span><span id="hw-far-dist" class="mono">-</span></div>
+              <div class="metric"><span>투사비 TR = h/W</span><span id="hw-throw-ratio" class="mono">-</span></div>
+              <div class="metric"><span>필요 가로 화각</span><span id="hw-fov-h" class="mono">-</span></div>
+              <div class="metric"><span>필요 세로 화각</span><span id="hw-fov-v" class="mono">-</span></div>
+
+              <div class="hw-group">③ 잔류 오차 (5s)</div>
+              <div class="metric"><span>RMS σ_x (좌우)</span><span id="hw-rms-x" class="mono">-</span></div>
+              <div class="metric"><span>RMS σ_z (전후)</span><span id="hw-rms-z" class="mono">-</span></div>
+              <div class="metric"><span>최대 순간 편차 ★</span><span id="hw-max-err" class="warn mono">-</span></div>
+              <div class="metric"><span>±5cm 유지율</span><span id="hw-coverage" class="ok">-</span></div>
+
+              <div class="hw-group">④ 알고리즘 공식</div>
+              <div class="hw-formula">θ = arctan(h<sub>knee</sub> / d<sub>fwd</sub>)</div>
+              <div class="hw-formula">a = K<sub>s</sub>·e − K<sub>d</sub>·v &nbsp;<span class="hw-eq-note">(스프링-댐퍼)</span></div>
+              <div class="hw-formula">K<sub>s</sub>=22, K<sub>d</sub>=9 &nbsp;<span class="hw-eq-note">(임계감쇠: K<sub>d</sub>≈2√K<sub>s</sub>)</span></div>
+              <div class="hw-formula">d<sub>opt</sub> = h<sub>knee</sub> / tan(52.5°)</div>
+              <div class="hw-formula">TR = h<sub>knee</sub> / W<sub>floor</sub> &nbsp;<span class="hw-eq-note">(투사비)</span></div>
+              <div class="hw-formula">H_FOV = 2·arctan(W/2 / d<sub>near</sub>)</div>
+              <button id="hwResetMax" type="button" style="margin-top:8px;width:100%">★ 최대값 초기화</button>
             </div>
           </div>
         </div>
