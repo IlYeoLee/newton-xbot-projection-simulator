@@ -1343,16 +1343,38 @@ function updateProjection(dt) {
 
   const kneeH = Math.max(0.15, sensed.y);
 
-  // Spring target: bodyPos + toe-forward offset + planeCenterDist.
-  // During running the front foot extends ~50cm ahead of bodyPos (hip root),
-  // so we add a fixed stance offset so floorStart=0 ≈ toe tip, not hip center.
-  const STANCE_TOE_OFFSET = 0.45; // m: typical max forward foot extent from bodyPos
-  const angleTarget = new THREE.Vector3(
-    bodyPos.x + modelFwd.x * (STANCE_TOE_OFFSET + planeCenterDist),
+  // Floor center distance from TOE reference point.
+  // bodyPos = body root XZ (hip/ground), knee is ~15cm forward of that toward modelFwd.
+  // Stable world target for spring: bodyPos + fixed forward offset + planeCenterDist.
+  const BODY_TO_TOE = 0.45; // m: forward offset from bodyPos to toe tip for running stride
+  const stableTarget = new THREE.Vector3(
+    bodyPos.x + modelFwd.x * (BODY_TO_TOE + planeCenterDist),
     0.012,
-    bodyPos.z + modelFwd.z * (STANCE_TOE_OFFSET + planeCenterDist)
+    bodyPos.z + modelFwd.z * (BODY_TO_TOE + planeCenterDist)
   );
-  lastIdealTarget.copy(angleTarget);
+  lastIdealTarget.copy(stableTarget);
+
+  // Raw floor position: actual knee bone XZ drives the projection (no spring).
+  // kneeModule oscillates with the animation — fast anim = fast floor movement,
+  // paused anim = static floor. BODY_TO_TOE offset not needed here since
+  // the knee is already ahead of bodyPos by the lower-leg forward extent.
+  const KNEE_TO_TOE = 0.15; // m: horizontal forward offset knee→toe in running stance
+  const rawFloorCenter = new THREE.Vector3(
+    kneeModule.x + modelFwd.x * (KNEE_TO_TOE + planeCenterDist),
+    0.012,
+    kneeModule.z + modelFwd.z * (KNEE_TO_TOE + planeCenterDist)
+  );
+
+  // For HW mode, sensed (noisy IMU) XZ disturbance is added to the stable target
+  // so that sensor noise appears as residual floor jitter.
+  const sensedTarget = new THREE.Vector3(
+    stableTarget.x + (sensed.x - bodyPos.x) * 0.4,
+    0.012,
+    stableTarget.z + (sensed.z - bodyPos.z) * 0.4
+  );
+
+  // Angle target for spring: ideal→stableTarget, HW→sensedTarget (adds noise)
+  const angleTarget = stabMode === 'hw' ? sensedTarget : stableTarget;
 
   // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
   floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
@@ -1377,14 +1399,9 @@ function updateProjection(dt) {
     floorPlane.position.copy(qStabFloor);
     wallPlane.position.copy(qStabWall);
   } else {
-    rawPhase += dt * 6;
-    // Raw mode: slider-defined center + instability noise
-    const rawTarget = new THREE.Vector3(
-      bodyPos.x + modelFwd.x * (STANCE_TOE_OFFSET + planeCenterDist) + Math.sin(rawPhase * 1.7) * 0.08,
-      0.012,
-      bodyPos.z + modelFwd.z * (STANCE_TOE_OFFSET + planeCenterDist) + Math.cos(rawPhase * 1.2) * 0.05
-    );
-    floorPlane.position.copy(rawTarget);
+    // Raw mode: floor directly follows actual knee bone — no artificial oscillation.
+    // Floor moves exactly as fast/slow as the animation; paused anim = static floor.
+    floorPlane.position.copy(rawFloorCenter);
     wallPlane.position.copy(baseWall).add(new THREE.Vector3(S.x * 0.35, (S.y - 1.1) * 0.12, 0));
   }
 
