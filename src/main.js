@@ -1258,13 +1258,14 @@ function updateProjection(dt) {
 
   const kneeH = Math.max(0.15, sensed.y);
 
-  // Spring target: use body root XZ (not knee XZ) so floorStart is always measured
-  // from the character's foot contact point, not the floating knee position.
-  // Knee XZ oscillates ±30cm during running, causing floor to appear mid-body.
+  // Spring target: bodyPos + toe-forward offset + planeCenterDist.
+  // During running the front foot extends ~50cm ahead of bodyPos (hip root),
+  // so we add a fixed stance offset so floorStart=0 ≈ toe tip, not hip center.
+  const STANCE_TOE_OFFSET = 0.45; // m: typical max forward foot extent from bodyPos
   const angleTarget = new THREE.Vector3(
-    bodyPos.x + modelFwd.x * planeCenterDist,
+    bodyPos.x + modelFwd.x * (STANCE_TOE_OFFSET + planeCenterDist),
     0.012,
-    bodyPos.z + modelFwd.z * planeCenterDist
+    bodyPos.z + modelFwd.z * (STANCE_TOE_OFFSET + planeCenterDist)
   );
 
   // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
@@ -1293,9 +1294,9 @@ function updateProjection(dt) {
     rawPhase += dt * 6;
     // Raw mode: slider-defined center + instability noise
     const rawTarget = new THREE.Vector3(
-      bodyPos.x + modelFwd.x * planeCenterDist + Math.sin(rawPhase * 1.7) * 0.08,
+      bodyPos.x + modelFwd.x * (STANCE_TOE_OFFSET + planeCenterDist) + Math.sin(rawPhase * 1.7) * 0.08,
       0.012,
-      bodyPos.z + modelFwd.z * planeCenterDist + Math.cos(rawPhase * 1.2) * 0.05
+      bodyPos.z + modelFwd.z * (STANCE_TOE_OFFSET + planeCenterDist) + Math.cos(rawPhase * 1.2) * 0.05
     );
     floorPlane.position.copy(rawTarget);
     wallPlane.position.copy(baseWall).add(new THREE.Vector3(S.x * 0.35, (S.y - 1.1) * 0.12, 0));
