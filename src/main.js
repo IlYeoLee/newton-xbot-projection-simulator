@@ -1258,12 +1258,13 @@ function updateProjection(dt) {
 
   const kneeH = Math.max(0.15, sensed.y);
 
-  // Spring target: slider value IS the near-edge distance, servo just tracks it
-  // (kneeH used only for HW panel angle display, not for overriding the slider)
+  // Spring target: use body root XZ (not knee XZ) so floorStart is always measured
+  // from the character's foot contact point, not the floating knee position.
+  // Knee XZ oscillates ±30cm during running, causing floor to appear mid-body.
   const angleTarget = new THREE.Vector3(
-    sensed.x + modelFwd.x * planeCenterDist,
+    bodyPos.x + modelFwd.x * planeCenterDist,
     0.012,
-    sensed.z + modelFwd.z * planeCenterDist
+    bodyPos.z + modelFwd.z * planeCenterDist
   );
 
   // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
@@ -1292,9 +1293,9 @@ function updateProjection(dt) {
     rawPhase += dt * 6;
     // Raw mode: slider-defined center + instability noise
     const rawTarget = new THREE.Vector3(
-      kneeModule.x + modelFwd.x * planeCenterDist + Math.sin(rawPhase * 1.7) * 0.08,
+      bodyPos.x + modelFwd.x * planeCenterDist + Math.sin(rawPhase * 1.7) * 0.08,
       0.012,
-      kneeModule.z + modelFwd.z * planeCenterDist + Math.cos(rawPhase * 1.2) * 0.05
+      bodyPos.z + modelFwd.z * planeCenterDist + Math.cos(rawPhase * 1.2) * 0.05
     );
     floorPlane.position.copy(rawTarget);
     wallPlane.position.copy(baseWall).add(new THREE.Vector3(S.x * 0.35, (S.y - 1.1) * 0.12, 0));
@@ -1328,7 +1329,7 @@ function updateProjection(dt) {
   if (wallOn) setBeam(wallBeam, externalProjector, wc);
   updateScenarioVisibility();
   by('floorM').textContent = `시작 ${(floorStart * 100).toFixed(0)} / 끝 ${((floorStart + floorDepth) * 100).toFixed(0)}cm`;
-  updateHWPanel(dt, kneeModule, qStabFloor, planeCenterDist, floorStart, floorDepth, Number(by('floorW').value) / 100);
+  updateHWPanel(dt, kneeModule, qStabFloor, planeCenterDist, floorStart, floorDepth, Number(by('floorW').value) / 100, bodyPos);
 }
 
 // Auto-move speed per preset (m/s); 0 = stationary exercise
@@ -1380,7 +1381,7 @@ function resetHWStats() {
   resetKF();
 }
 
-function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, floorDepth, floorW) {
+function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, floorDepth, floorW, bodyPos) {
   if (!modelLoaded) return;
   const kneeH = Math.max(0.15, kneeModule.y);
   const safedt = Math.max(0.005, dt);
@@ -1402,9 +1403,11 @@ function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, flo
   hwPrevPitch = pitchDeg;
   hwPrevPitchVel = pitchVel;
 
-  // ③ Position error vs ideal no-body-motion target
-  const idealX = kneeModule.x + cachedModelFwd.x * planeCenterDist;
-  const idealZ = kneeModule.z + cachedModelFwd.z * planeCenterDist;
+  // ③ Position error: how far servo lags behind the body-based ideal target
+  const refX = bodyPos ? bodyPos.x : kneeModule.x;
+  const refZ = bodyPos ? bodyPos.z : kneeModule.z;
+  const idealX = refX + cachedModelFwd.x * planeCenterDist;
+  const idealZ = refZ + cachedModelFwd.z * planeCenterDist;
   const errX = (stabPos.x - idealX) * 100;
   const errZ = (stabPos.z - idealZ) * 100;
   const instErr = Math.sqrt(errX * errX + errZ * errZ);
