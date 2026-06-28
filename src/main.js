@@ -88,6 +88,38 @@ let hwCovTotal = 0;
 let hwLastDom = 0;
 const cachedModelFwd = new THREE.Vector3(0, 0, -1);
 
+// ──── Simulation realism parameters ────
+let imuEnabled = false;
+let imuSigmaAcc = 3;    // mm — accelerometer noise σ
+let imuDriftRate = 0.1; // °/s — gyro drift rate
+let hfvEnabled = false;
+let hfvAmp = 2;         // cm — high-freq vibration amplitude
+let hfvFreq = 10;       // Hz — vibration frequency
+let latEnabled = false;
+let latDelayMs = 50;    // ms — sensor→servo system latency
+let srvEnabled = false;
+let srvMaxVelDeg = 300; // °/s — servo max angular velocity
+let kfEnabled = false;
+let kfQval = 0.04;      // process noise (velocity)
+let kfRval = 0.0009;    // measurement noise variance
+
+// IMU drift & vibration state
+const imuDrift = new THREE.Vector3();
+let hfvPhase = 0;
+
+// Latency circular buffer (128 slots ≈ 2s at 60fps)
+const LAT_BUF = 128;
+const latBufX = new Float32Array(LAT_BUF);
+const latBufY = new Float32Array(LAT_BUF);
+const latBufZ = new Float32Array(LAT_BUF);
+let latBufHead = 0;
+let latBufFilled = 0;
+
+// Kalman 1D filter instances (knee X and Z)
+function mkKF() { return { pos: 0, vel: 0, p00: 1, p01: 0, p10: 0, p11: 1 }; }
+let kfX = mkKF();
+let kfZ = mkKF();
+
 const DEFAULT_SURFACE_STATE = {
   floor: {
     text: '텍스트를 입력하세요',
@@ -886,6 +918,51 @@ function bind() {
     updateSurfaceEditorLabels();
     refreshSurfaceTexture(activeSurface);
   });
+
+  // ── Section 08: Simulation realism ──
+  function setSimToggle(feature, on) {
+    const onBtn = by(`${feature}On`), offBtn = by(`${feature}Off`);
+    if (onBtn) onBtn.classList.toggle('active', on);
+    if (offBtn) offBtn.classList.toggle('active', !on);
+  }
+  by('imuNoiseOn').addEventListener('click', () => { imuEnabled = true; setSimToggle('imuNoise', true); resetHWStats(); });
+  by('imuNoiseOff').addEventListener('click', () => { imuEnabled = false; setSimToggle('imuNoise', false); resetHWStats(); });
+  bindPair('imuSigma', 'imuSigmaN', (v) => { imuSigmaAcc = Number(v); by('imuSigmaVal').textContent = `${v} mm`; });
+  bindPair('imuDrift', 'imuDriftN', (v) => { imuDriftRate = Number(v); by('imuDriftVal').textContent = `${v} °/s`; });
+
+  by('hfvOn').addEventListener('click', () => { hfvEnabled = true; setSimToggle('hfv', true); resetHWStats(); });
+  by('hfvOff').addEventListener('click', () => { hfvEnabled = false; setSimToggle('hfv', false); resetHWStats(); });
+  bindPair('hfvAmp', 'hfvAmpN', (v) => { hfvAmp = Number(v); by('hfvAmpVal').textContent = `${v} cm`; });
+  bindPair('hfvFreq', 'hfvFreqN', (v) => { hfvFreq = Number(v); by('hfvFreqVal').textContent = `${v} Hz`; });
+
+  by('latOn').addEventListener('click', () => { latEnabled = true; setSimToggle('lat', true); resetHWStats(); });
+  by('latOff').addEventListener('click', () => { latEnabled = false; setSimToggle('lat', false); resetHWStats(); });
+  bindPair('latDelay', 'latDelayN', (v) => { latDelayMs = Number(v); by('latDelayVal').textContent = `${v} ms`; });
+
+  by('srvOn').addEventListener('click', () => { srvEnabled = true; setSimToggle('srv', true); });
+  by('srvOff').addEventListener('click', () => { srvEnabled = false; setSimToggle('srv', false); });
+  bindPair('srvMaxVel', 'srvMaxVelN', (v) => { srvMaxVelDeg = Number(v); by('srvMaxVelVal').textContent = `${v} °/s`; });
+
+  by('kfOn').addEventListener('click', () => { kfEnabled = true; setSimToggle('kf', true); resetKF(); });
+  by('kfOff').addEventListener('click', () => { kfEnabled = false; setSimToggle('kf', false); });
+  bindPair('kfQ', 'kfQN', (v) => { kfQval = Number(v); by('kfQVal').textContent = v; });
+  bindPair('kfR', 'kfRN', (v) => { kfRval = Number(v); by('kfRVal').textContent = v; });
+
+  by('runMC').addEventListener('click', () => {
+    by('runMC').textContent = '계산 중...';
+    by('runMC').disabled = true;
+    setTimeout(() => {
+      const r = runMonteCarlo();
+      setTextIfPresent('mc-p50', `${r.p50.toFixed(1)} cm`);
+      setTextIfPresent('mc-p95', `${r.p95.toFixed(1)} cm`);
+      setTextIfPresent('mc-p99', `${r.p99.toFixed(1)} cm`);
+      setTextIfPresent('mc-rms', `${r.meanRms.toFixed(1)} cm`);
+      setTextIfPresent('mc-p95rms', `${r.p95rms.toFixed(1)} cm`);
+      by('mcResults').style.display = '';
+      by('runMC').textContent = '⑥ Monte Carlo 재실행 (N=50)';
+      by('runMC').disabled = false;
+    }, 10);
+  });
 }
 
 function resetSettings() {
@@ -1071,17 +1148,20 @@ function updateProjection(dt) {
   // Floor center distance comes from sliders: near edge offset + half depth
   const planeCenterDist = floorStart + floorDepth / 2;
 
-  // Angle-error feedback for stabilization fine-tuning (small ±30cm correction max)
-  const kneeH = Math.max(0.15, kneeModule.y);
+  // ── Realism layer: get sensor-noisy knee estimate ──
+  const sensed = getSensedKnee(kneeModule, dt);
+
+  // Angle-error feedback using SENSED knee (as real IMU would see)
+  const kneeH = Math.max(0.15, sensed.y);
   const PROJ_TARGET_DEG = 52.5;
   const angErr = PROJ_TARGET_DEG - smoothedFloorAngle;
   const distCorrect = Math.max(-0.3, Math.min(0.3, angErr * 0.008 * kneeH));
 
-  // Spring target: slider-defined center + small angle correction
+  // Spring target derived from SENSED knee position
   const angleTarget = new THREE.Vector3(
-    kneeModule.x + modelFwd.x * (planeCenterDist + distCorrect),
+    sensed.x + modelFwd.x * (planeCenterDist + distCorrect),
     0.012,
-    kneeModule.z + modelFwd.z * (planeCenterDist + distCorrect)
+    sensed.z + modelFwd.z * (planeCenterDist + distCorrect)
   );
 
   // Rotate floor plane to always face body forward direction
@@ -1095,7 +1175,11 @@ function updateProjection(dt) {
     const errVec = angleTarget.clone().sub(qStabFloor);
     const acc = errVec.multiplyScalar(K_s).sub(stabVelocity.clone().multiplyScalar(K_d));
     stabVelocity.addScaledVector(acc, dt);
-    if (stabVelocity.length() > 3.0) stabVelocity.setLength(3.0); // velocity clamp
+    // Servo bandwidth limit: convert max angular velocity to linear floor velocity
+    const vFloorMax = srvEnabled
+      ? (srvMaxVelDeg * Math.PI / 180) * kneeH
+      : 3.0;
+    if (stabVelocity.length() > vFloorMax) stabVelocity.setLength(vFloorMax);
     qStabFloor.addScaledVector(stabVelocity, dt);
 
     const wallAlpha = 1 - Math.exp(-dt / Math.max(0.03, tau));
@@ -1164,6 +1248,12 @@ function resetHWStats() {
   hwMaxPitchVel = 0; hwMaxPitchAcc = 0;
   hwPitchMin = 90; hwPitchMax = 0;
   hwMaxErr = 0; hwCovHits = 0; hwCovTotal = 0;
+  // Reset noise & estimation state
+  imuDrift.set(0, 0, 0);
+  hfvPhase = 0;
+  latBufHead = 0; latBufFilled = 0;
+  latBufX.fill(0); latBufY.fill(0); latBufZ.fill(0);
+  resetKF();
 }
 
 function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, floorDepth, floorW) {
@@ -1375,6 +1465,136 @@ function updateCameraFollow() {
 function applyViewVisibility() {
   if (!modelRoot) return;
   modelRoot.visible = currentView !== 'eye';
+}
+
+// ──── Noise & Kalman utilities ────
+
+function gaussRand() {
+  let u = 0, v = 0;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// 1D Kalman: state = [position, velocity], measurement = position
+function kfPredict(k, dt) {
+  const pos = k.pos + k.vel * dt;
+  const p00 = k.p00 + dt * (k.p01 + k.p10) + dt * dt * k.p11 + kfQval * 0.01 * dt;
+  const p01 = k.p01 + dt * k.p11;
+  const p10 = k.p10 + dt * k.p11;
+  const p11 = k.p11 + kfQval * dt;
+  k.pos = pos;
+  k.p00 = p00; k.p01 = p01; k.p10 = p10; k.p11 = p11;
+}
+function kfUpdate(k, meas) {
+  const y = meas - k.pos;
+  const s = k.p00 + kfRval;
+  const g0 = k.p00 / s;
+  const g1 = k.p10 / s;
+  k.pos += g0 * y;
+  k.vel += g1 * y;
+  const p00 = (1 - g0) * k.p00;
+  const p01 = (1 - g0) * k.p01;
+  const p10 = k.p10 - g1 * k.p00;
+  const p11 = k.p11 - g1 * k.p01;
+  k.p00 = p00; k.p01 = p01; k.p10 = p10; k.p11 = p11;
+}
+function resetKF() {
+  kfX = mkKF(); kfX.pos = cachedModelFwd.x;
+  kfZ = mkKF(); kfZ.pos = cachedModelFwd.z;
+}
+
+// Apply latency + noise + Kalman to get "sensed" knee position
+function getSensedKnee(trueKnee, dt) {
+  // 1. Store true knee in latency buffer every frame
+  latBufX[latBufHead] = trueKnee.x;
+  latBufY[latBufHead] = trueKnee.y;
+  latBufZ[latBufHead] = trueKnee.z;
+  latBufHead = (latBufHead + 1) % LAT_BUF;
+  latBufFilled = Math.min(latBufFilled + 1, LAT_BUF);
+
+  // 2. Latency: read from N frames ago
+  let sx = trueKnee.x, sy = trueKnee.y, sz = trueKnee.z;
+  if (latEnabled && latBufFilled > 1) {
+    const delayFrames = Math.min(Math.round(latDelayMs / 16.67), latBufFilled - 1);
+    const readIdx = ((latBufHead - 1 - delayFrames) % LAT_BUF + LAT_BUF) % LAT_BUF;
+    sx = latBufX[readIdx]; sy = latBufY[readIdx]; sz = latBufZ[readIdx];
+  }
+
+  // 3. High-frequency vibration (simulates residual mechanical vibration on knee mount)
+  if (hfvEnabled) {
+    hfvPhase += 2 * Math.PI * hfvFreq * dt;
+    const amp = hfvAmp / 100;
+    sx += Math.sin(hfvPhase * 1.3) * amp * 0.3;
+    sy += Math.abs(Math.sin(hfvPhase) * amp * 0.6);
+    sz += Math.cos(hfvPhase * 0.9) * amp * 0.5;
+  }
+
+  // 4. IMU noise: Gaussian + slow gyro drift
+  if (imuEnabled) {
+    const sigma = imuSigmaAcc / 1000;
+    sx += gaussRand() * sigma;
+    sy = Math.max(0.15, sy + gaussRand() * sigma * 0.5);
+    sz += gaussRand() * sigma;
+    // Random-walk drift (integrated gyro error → position offset)
+    imuDrift.x += gaussRand() * imuDriftRate * dt * 0.0002;
+    imuDrift.z += gaussRand() * imuDriftRate * dt * 0.0002;
+    sx += imuDrift.x;
+    sz += imuDrift.z;
+  }
+
+  // 5. Kalman filter: estimate true position from noisy sensor output
+  if (kfEnabled) {
+    kfPredict(kfX, dt); kfUpdate(kfX, sx);
+    kfPredict(kfZ, dt); kfUpdate(kfZ, sz);
+    sx = kfX.pos;
+    sz = kfZ.pos;
+  }
+
+  return new THREE.Vector3(sx, sy, sz);
+}
+
+// ──── Monte Carlo headless simulation ────
+function runMonteCarlo() {
+  const N = 50, FRAMES = 300, DT = 1 / 60;
+  const sigma = imuEnabled ? imuSigmaAcc / 1000 : 0.003;
+  const amp = hfvEnabled ? hfvAmp / 100 : 0;
+  const Ks = 22, Kd = 9;
+  const maxErrs = [], rmsErrs = [];
+
+  for (let trial = 0; trial < N; trial++) {
+    let stabZ = -1.0, vZ = 0, phase = Math.random() * Math.PI * 2;
+    const errs = [];
+    for (let f = 0; f < FRAMES; f++) {
+      const t = f * DT;
+      // Parametric running gait model
+      const ky = 0.52 + 0.04 * Math.sin(2 * Math.PI * 2.5 * t + phase);
+      const kz = -0.02 + 0.03 * Math.cos(2 * Math.PI * 2.5 * t + phase);
+      // Sensed knee (noise + vibration, no Kalman in MC for worst-case)
+      let sz = kz + gaussRand() * sigma;
+      if (amp > 0) sz += Math.cos(t * 2 * Math.PI * hfvFreq * 0.9) * amp * 0.5;
+      // Spring target: center = start(0.2m) + depth/2(0.8m) = 1.0m forward
+      const targetZ = sz - 1.0;
+      const errZ = targetZ - stabZ;
+      vZ += (Ks * errZ - Kd * vZ) * DT;
+      const vMax = srvEnabled ? (srvMaxVelDeg * Math.PI / 180) * Math.max(0.15, ky) : 3.0;
+      vZ = Math.max(-vMax, Math.min(vMax, vZ));
+      stabZ += vZ * DT;
+      errs.push(Math.abs(stabZ - (kz - 1.0)) * 100); // cm error vs true ideal
+    }
+    const rms = Math.sqrt(errs.reduce((s, e) => s + e * e, 0) / errs.length);
+    maxErrs.push(Math.max(...errs));
+    rmsErrs.push(rms);
+  }
+
+  maxErrs.sort((a, b) => a - b);
+  rmsErrs.sort((a, b) => a - b);
+  const idx = (p) => Math.min(Math.floor(N * p), N - 1);
+  return {
+    p50: maxErrs[idx(0.5)], p95: maxErrs[idx(0.95)], p99: maxErrs[idx(0.99)],
+    meanRms: rmsErrs.reduce((s, v) => s + v, 0) / N,
+    p95rms: rmsErrs[idx(0.95)]
+  };
 }
 
 function errText(e) {

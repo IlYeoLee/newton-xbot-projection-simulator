@@ -199,6 +199,20 @@ input::file-selector-button {
   overflow: auto;
 }
 
+.sim-feat {
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  padding: 9px 10px;
+  margin-bottom: 8px;
+}
+.sim-label {
+  font-size: 10px;
+  font-weight: 950;
+  color: var(--warn);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
 .hw-group {
   font-size: 10px;
   font-weight: 950;

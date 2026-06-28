@@ -187,6 +187,61 @@
               <div class="field"><div class="row"><label>고개 숙임</label><span class="value" id="pitchVal">-18°</span></div><div class="pair"><input id="pitch" type="range" min="-40" max="15" step="1" value="-18"><input id="pitchN" type="number" min="-40" max="15" step="1" value="-18"></div></div>
               <p class="mini">50° 수직 FOV ≈ 28mm 풀프레임 (자연스러운 원근감). 15°≈50mm, 46°≈24mm. 달릴 때 자연 시선은 -15°~-20°.</p>
             </section>
+
+            <section class="sec">
+              <h2>08 시뮬레이션 정밀도 <span>현실화 파라미터</span></h2>
+
+              <div class="sim-feat">
+                <div class="sim-label">① IMU 노이즈</div>
+                <div class="grid2"><button id="imuNoiseOn">ON</button><button id="imuNoiseOff" class="active">OFF</button></div>
+                <div class="field"><div class="row"><label>σ 가속도 노이즈</label><span class="value" id="imuSigmaVal">3 mm</span></div><div class="pair"><input id="imuSigma" type="range" min="0" max="20" step="0.5" value="3"><input id="imuSigmaN" type="number" min="0" max="20" step="0.5" value="3"></div></div>
+                <div class="field"><div class="row"><label>자이로 드리프트</label><span class="value" id="imuDriftVal">0.1 °/s</span></div><div class="pair"><input id="imuDrift" type="range" min="0" max="2" step="0.05" value="0.1"><input id="imuDriftN" type="number" min="0" max="2" step="0.05" value="0.1"></div></div>
+                <p class="mini">Gaussian 노이즈(σ) + 랜덤워크 드리프트. 실제 IMU 스펙에서 얻어 입력.</p>
+              </div>
+
+              <div class="sim-feat">
+                <div class="sim-label">② 고주파 기계 진동</div>
+                <div class="grid2"><button id="hfvOn">ON</button><button id="hfvOff" class="active">OFF</button></div>
+                <div class="field"><div class="row"><label>진폭</label><span class="value" id="hfvAmpVal">2 cm</span></div><div class="pair"><input id="hfvAmp" type="range" min="0" max="5" step="0.5" value="2"><input id="hfvAmpN" type="number" min="0" max="5" step="0.5" value="2"></div></div>
+                <div class="field"><div class="row"><label>주파수</label><span class="value" id="hfvFreqVal">10 Hz</span></div><div class="pair"><input id="hfvFreq" type="range" min="5" max="20" step="1" value="10"><input id="hfvFreqN" type="number" min="5" max="20" step="1" value="10"></div></div>
+                <p class="mini">Mixamo 데이터에 없는 달리기 중 무릎 미세진동(8~12Hz) 모델.</p>
+              </div>
+
+              <div class="sim-feat">
+                <div class="sim-label">③ 시스템 지연 (Latency)</div>
+                <div class="grid2"><button id="latOn">ON</button><button id="latOff" class="active">OFF</button></div>
+                <div class="field"><div class="row"><label>센서→서보 지연</label><span class="value" id="latDelayVal">50 ms</span></div><div class="pair"><input id="latDelay" type="range" min="0" max="100" step="5" value="50"><input id="latDelayN" type="number" min="0" max="100" step="5" value="50"></div></div>
+                <p class="mini">IMU→MCU→드라이버→서보 전체 파이프라인 지연. 과하면 발산 확인 가능.</p>
+              </div>
+
+              <div class="sim-feat">
+                <div class="sim-label">④ 서보 대역폭 제한</div>
+                <div class="grid2"><button id="srvOn">ON</button><button id="srvOff" class="active">OFF</button></div>
+                <div class="field"><div class="row"><label>최대 각속도</label><span class="value" id="srvMaxVelVal">300 °/s</span></div><div class="pair"><input id="srvMaxVel" type="range" min="50" max="600" step="10" value="300"><input id="srvMaxVelN" type="number" min="50" max="600" step="10" value="300"></div></div>
+                <p class="mini">서보 물리 한계: 이 이상의 각속도는 불가. HW 스펙 최대 각속도 ★와 비교.</p>
+              </div>
+
+              <div class="sim-feat">
+                <div class="sim-label">⑤ 칼만 필터 추정기</div>
+                <div class="grid2"><button id="kfOn">ON</button><button id="kfOff" class="active">OFF</button></div>
+                <div class="field"><div class="row"><label>프로세스 노이즈 Q</label><span class="value" id="kfQVal">0.04</span></div><div class="pair"><input id="kfQ" type="range" min="0.001" max="0.3" step="0.001" value="0.04"><input id="kfQN" type="number" min="0.001" max="0.3" step="0.001" value="0.04"></div></div>
+                <div class="field"><div class="row"><label>측정 노이즈 R</label><span class="value" id="kfRVal">0.0009</span></div><div class="pair"><input id="kfR" type="range" min="0.0001" max="0.05" step="0.0001" value="0.0009"><input id="kfRN" type="number" min="0.0001" max="0.05" step="0.0001" value="0.0009"></div></div>
+                <p class="mini">Q↑=모델 신뢰↓(빠르게 추종), R↑=측정 신뢰↓(더 스무딩). IMU 노이즈 ON 상태에서 효과 확인.</p>
+              </div>
+
+              <div class="sim-feat">
+                <div class="sim-label">⑥ Monte Carlo 검증</div>
+                <button id="runMC" type="button" style="width:100%;margin-bottom:8px">⑥ Monte Carlo 실행 (N=50, 5초)</button>
+                <p class="mini">현재 파라미터로 50회 시뮬레이션 실행. 달리기 보행 모델 + 현재 노이즈 설정 사용.</p>
+                <div id="mcResults" style="display:none">
+                  <div class="metric"><span>P50 최대 편차</span><span id="mc-p50" class="ok mono">-</span></div>
+                  <div class="metric"><span>P95 최대 편차</span><span id="mc-p95" class="warn mono">-</span></div>
+                  <div class="metric"><span>P99 최대 편차</span><span id="mc-p99" class="bad mono">-</span></div>
+                  <div class="metric"><span>평균 RMS 편차</span><span id="mc-rms" class="mono">-</span></div>
+                  <div class="metric"><span>P95 RMS 편차</span><span id="mc-p95rms" class="warn mono">-</span></div>
+                </div>
+              </div>
+            </section>
           </div>
         </aside>
 
