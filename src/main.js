@@ -41,6 +41,8 @@ let externalWallProjector;
 let ground;
 let wall;
 let grid;
+let eyeFovLines = null;
+let eyeFovVisible = false;
 let wallGrid;
 let currentPreset = 'running';
 let currentMotion = '';
@@ -301,6 +303,13 @@ function makeProjectionSurfaces() {
 
   refreshSurfaceTexture('floor');
   refreshSurfaceTexture('wall');
+
+  // Eye FOV wireframe frustum: 12 line segments (cyan, distinct from red beam)
+  const fovGeom = new THREE.BufferGeometry();
+  fovGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12 * 2 * 3), 3));
+  eyeFovLines = new THREE.LineSegments(fovGeom, new THREE.LineBasicMaterial({ color: 0x22eeff, transparent: true, opacity: 0.55 }));
+  eyeFovLines.visible = false;
+  scene.add(eyeFovLines);
 }
 
 function labelTexture(text, w, h, vertical = false) {
@@ -861,6 +870,12 @@ function bind() {
     autoMoveBtn.textContent = autoMove ? '자동이동 ON' : '자동이동 OFF';
     autoMoveBtn.classList.toggle('active', autoMove);
   });
+  const eyeFovBtn = by('eyeFovBtn');
+  if (eyeFovBtn) eyeFovBtn.addEventListener('click', () => {
+    eyeFovVisible = !eyeFovVisible;
+    eyeFovBtn.textContent = eyeFovVisible ? '시야콘 ON' : '시야콘 OFF';
+    eyeFovBtn.classList.toggle('active', eyeFovVisible);
+  });
   document.querySelectorAll('.card-toggle').forEach((button) => {
     button.addEventListener('click', () => {
       const card = by(button.dataset.card);
@@ -1123,6 +1138,60 @@ function setBeam(mesh, apex, corners) {
   mesh.geometry.computeVertexNormals();
 }
 
+function updateEyeFov() {
+  if (!eyeFovLines) return;
+  eyeFovLines.visible = eyeFovVisible;
+  if (!eyeFovVisible) return;
+
+  const eye = getWorld(eyeBone, 'E');
+  const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -15));
+  const fovVRad = THREE.MathUtils.degToRad(Number(by('fov').value || 50));
+  const fovHRad = 2 * Math.atan(Math.tan(fovVRad / 2) * camera.aspect);
+
+  // Look direction (pitch applied to model forward)
+  const fwd = cachedModelFwd.clone();
+  const look = new THREE.Vector3(
+    fwd.x * Math.cos(pitchRad),
+    Math.sin(pitchRad),
+    fwd.z * Math.cos(pitchRad)
+  ).normalize();
+  const right = new THREE.Vector3().crossVectors(look, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, look).normalize();
+
+  const tH = Math.tan(fovHRad / 2);
+  const tV = Math.tan(fovVRad / 2);
+
+  // 4 corner rays of the frustum
+  const dirs = [
+    look.clone().addScaledVector(right, -tH).addScaledVector(up,  tV).normalize(),
+    look.clone().addScaledVector(right,  tH).addScaledVector(up,  tV).normalize(),
+    look.clone().addScaledVector(right,  tH).addScaledVector(up, -tV).normalize(),
+    look.clone().addScaledVector(right, -tH).addScaledVector(up, -tV).normalize(),
+  ];
+
+  // Intersect rays with floor (y = 0.015); cap at 8m if ray points up
+  const FLOOR_Y = 0.015;
+  const MAX_D = 8;
+  const far = dirs.map(d => {
+    if (d.y >= -0.01) return eye.clone().addScaledVector(d, MAX_D);
+    const t = (FLOOR_Y - eye.y) / d.y;
+    return t > 0 && t < MAX_D ? eye.clone().addScaledVector(d, t) : eye.clone().addScaledVector(d, MAX_D);
+  });
+  // Near cross at 0.8m
+  const near = dirs.map(d => eye.clone().addScaledVector(d, 0.8));
+
+  const buf = eyeFovLines.geometry.attributes.position.array;
+  let i = 0;
+  const s = p => { buf[i++] = p.x; buf[i++] = p.y; buf[i++] = p.z; };
+  // 4 rays eye→far corners
+  dirs.forEach((_, c) => { s(eye); s(far[c]); });
+  // 4 far edges (floor footprint)
+  for (let c = 0; c < 4; c++) { s(far[c]); s(far[(c + 1) % 4]); }
+  // 4 near edges (inner frame at 0.8m)
+  for (let c = 0; c < 4; c++) { s(near[c]); s(near[(c + 1) % 4]); }
+  eyeFovLines.geometry.attributes.position.needsUpdate = true;
+}
+
 function updateProjection(dt) {
   updateUserMovement(dt);
   if (modelRoot) modelRoot.position.copy(userPosition);
@@ -1263,11 +1332,13 @@ function updateUserMovement(dt) {
   }
   userPosition.add(manual);
 
-  // Infinite ground: scroll ground/grid with player so world feels endless
-  ground.position.x = userPosition.x;
-  ground.position.z = userPosition.z;
-  grid.position.x = userPosition.x;
-  grid.position.z = userPosition.z;
+  // Infinite ground: snap in 60m steps so character never approaches edge
+  // (do NOT set exactly = userPosition — that cancels parallax and looks like standing still)
+  const SNAP = 60;
+  ground.position.x = Math.round(userPosition.x / SNAP) * SNAP;
+  ground.position.z = Math.round(userPosition.z / SNAP) * SNAP;
+  grid.position.x = ground.position.x;
+  grid.position.z = ground.position.z;
 }
 
 function updateScenarioVisibility() {
@@ -1667,6 +1738,7 @@ function animate() {
       controls.update();
     }
     updateProjection(dt || 0.016);
+    updateEyeFov();
     const now = performance.now();
     if (now - lastAssessmentTime >= 700) {
       updatePersonaAssessment();
