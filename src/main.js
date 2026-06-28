@@ -1151,11 +1151,14 @@ function updateProjection(dt) {
   // ── Realism layer: get sensor-noisy knee estimate ──
   const sensed = getSensedKnee(kneeModule, dt);
 
-  // Angle-error feedback using SENSED knee (as real IMU would see)
+  // Servo auto-angle: IMU measures kneeH → compute exact ideal near-edge distance
   const kneeH = Math.max(0.15, sensed.y);
   const PROJ_TARGET_DEG = 52.5;
-  const angErr = PROJ_TARGET_DEG - smoothedFloorAngle;
-  const distCorrect = Math.max(-0.3, Math.min(0.3, angErr * 0.008 * kneeH));
+  // idealNearDist = kneeH / tan(52.5°): distance where projection angle = target
+  const idealNearDist = kneeH / Math.tan(THREE.MathUtils.degToRad(PROJ_TARGET_DEG));
+  // Servo can't project closer than slider minimum, but will push farther if needed
+  const effectiveNearDist = Math.max(floorStart, idealNearDist);
+  const distCorrect = (effectiveNearDist - floorStart); // servo offset from slider baseline
 
   // Spring target derived from SENSED knee position
   const angleTarget = new THREE.Vector3(
@@ -1310,20 +1313,24 @@ function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, flo
   const rmsZ = Math.sqrt(sumZ2 / hwBufCount);
   const cov = hwCovTotal > 0 ? (hwCovHits / hwCovTotal * 100) : 100;
 
-  // ② Lens / throw specs
-  const nearCm = floorStart * 100;
-  const farCm = (floorStart + floorDepth) * 100;
+  // ② Lens / throw specs — use servo-adjusted effective near distance
+  const idealNearDistHW = kneeH / Math.tan(THREE.MathUtils.degToRad(52.5));
+  const effectiveNearDistHW = Math.max(floorStart, idealNearDistHW);
+  const servoOffsetCm = (effectiveNearDistHW - floorStart) * 100;
+  const nearCm = effectiveNearDistHW * 100;
+  const farCm = (effectiveNearDistHW + floorDepth) * 100;
   const throwRatio = (kneeH / Math.max(0.01, floorW)).toFixed(2);
-  const hFovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan2(floorW / 2, Math.max(0.01, floorStart)));
-  const vFovDeg = THREE.MathUtils.radToDeg(Math.atan2(floorStart + floorDepth, kneeH))
-               - THREE.MathUtils.radToDeg(Math.atan2(floorStart, kneeH));
+  const hFovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan2(floorW / 2, Math.max(0.01, effectiveNearDistHW)));
+  const vFovDeg = THREE.MathUtils.radToDeg(Math.atan2(effectiveNearDistHW + floorDepth, kneeH))
+               - THREE.MathUtils.radToDeg(Math.atan2(effectiveNearDistHW, kneeH));
 
   setTextIfPresent('hw-pitch-angle', `${pitchDeg.toFixed(1)}°`);
   setTextIfPresent('hw-pitch-vel', `${pitchVel.toFixed(1)} °/s`);
   setTextIfPresent('hw-pitch-vel-max', `${hwMaxPitchVel.toFixed(1)} °/s`);
   setTextIfPresent('hw-pitch-acc-max', `${hwMaxPitchAcc.toFixed(0)} °/s²`);
   setTextIfPresent('hw-pitch-range', hwPitchMin <= hwPitchMax ? `${hwPitchMin.toFixed(1)}° ~ ${hwPitchMax.toFixed(1)}°` : '-');
-  setTextIfPresent('hw-near-dist', `${nearCm.toFixed(0)} cm`);
+  setTextIfPresent('hw-servo-offset', servoOffsetCm > 0.5 ? `+${servoOffsetCm.toFixed(1)} cm` : '보정 없음');
+  setTextIfPresent('hw-near-dist', `${nearCm.toFixed(0)} cm (슬라이더: ${(floorStart*100).toFixed(0)}cm)`);
   setTextIfPresent('hw-far-dist', `${farCm.toFixed(0)} cm`);
   setTextIfPresent('hw-throw-ratio', `${throwRatio} (h/W)`);
   setTextIfPresent('hw-fov-h', `${hFovDeg.toFixed(1)}°`);
@@ -1369,9 +1376,9 @@ function updatePersonaAssessment() {
     verdictClass = 'warn';
     reason = '핵심 범위는 맞지만 150~180cm 보조 범위를 조금 더 넓히면 좋습니다.';
   } else if (!coversAngle) {
-    verdict = '각도 조정 필요';
+    verdict = '서보 보정 중';
     verdictClass = 'warn';
-    reason = `현재 무릎 사출각 ${lastFloorAngle.toFixed(1)}°로, 권장 범위 45°~60°를 벗어납니다.`;
+    reason = `무릎 높이 기반 서보가 사출각 52.5° 유지를 위해 플로어 거리를 자동 조정 중입니다 (현재 ${lastFloorAngle.toFixed(1)}°)。`;
   } else if (!stabilize) {
     verdict = '사용 가능';
     verdictClass = 'warn';
