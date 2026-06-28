@@ -275,6 +275,7 @@ function init() {
 
 function makeProjectionSurfaces() {
   floorPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: surfaceTextures.floor.texture, side: THREE.DoubleSide, transparent: true }));
+  floorPlane.rotation.order = 'YXZ';
   floorPlane.rotation.x = -Math.PI / 2;
   floorPlane.scale.set(0.95, 1.35, 1);
   scene.add(floorPlane);
@@ -1164,8 +1165,8 @@ function updateProjection(dt) {
     sensed.z + modelFwd.z * (planeCenterDist + distCorrect)
   );
 
-  // Rotate floor plane to always face body forward direction
-  floorPlane.rotation.y = THREE.MathUtils.degToRad(yaw - 180);
+  // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
+  floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
 
   if (stabilize) {
     // --- 2nd-order spring-damper (models physical servo gimbal) ---
@@ -1202,7 +1203,12 @@ function updateProjection(dt) {
   wallGrid.position.z = wallPlane.position.z - 0.015;
   const fc = planeCorners(floorPlane);
   const wc = planeCorners(wallPlane);
-  const floorNearEdge = new THREE.Vector3(floorPlane.position.x, 0.012, floorPlane.position.z + floorPlane.scale.y / 2);
+  // Near edge = floor center minus half-depth in model's forward direction
+  const floorNearEdge = new THREE.Vector3(
+    floorPlane.position.x - modelFwd.x * floorDepth / 2,
+    0.012,
+    floorPlane.position.z - modelFwd.z * floorDepth / 2
+  );
   const floorRun = Math.hypot(kneeModule.x - floorNearEdge.x, kneeModule.z - floorNearEdge.z);
   const rawFloorAngle = THREE.MathUtils.radToDeg(Math.atan2(Math.max(0.001, kneeModule.y - floorNearEdge.y), Math.max(0.001, floorRun)));
   smoothedFloorAngle += (rawFloorAngle - smoothedFloorAngle) * 0.04;
@@ -1428,15 +1434,31 @@ function setView(v) {
 }
 
 function updateFirstPersonCamera(dt, snap = false) {
-  const pitch = THREE.MathUtils.degToRad(Number(by('pitch').value || 0));
+  const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || 0));
   const rawEye = getWorld(eyeBone, 'E');
-  const bodyEye = userPosition.clone().add(new THREE.Vector3(0, modelHeight * 0.93, 0.08));
-  // Heavily blend toward stable height — animation skeleton provides natural micro-movement
-  const targetEye = rawEye.lerp(bodyEye, 0.94);
+  const bodyEye = userPosition.clone().add(new THREE.Vector3(0, modelHeight * 0.93, 0.04));
 
-  const lookTarget = userPosition.clone().add(new THREE.Vector3(0, 1.2 + Math.sin(pitch) * 0.9, -2.4));
-  const eyeAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.25);
-  const lookAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.22);
+  // Eye position: 65% animation-driven (head bob, body lean), 35% stable height
+  // Previous code was 94% stable → essentially static. Now animation breathes through.
+  const targetEye = rawEye.clone().lerp(bodyEye, 0.35);
+
+  // Look direction: body forward + user pitch + animation lean
+  // When body bends forward (kettlebell, boxing guard), head drops below expected height.
+  // That height deficit maps to extra downward tilt on the look target.
+  const expectedEyeY = userPosition.y + modelHeight * 0.93;
+  const leanOffset = (rawEye.y - expectedEyeY) * 1.4; // negative when bending → look down more
+
+  const fwd = cachedModelFwd.clone(); // body facing direction
+  const lookDist = 2.8;
+  const lookTarget = new THREE.Vector3(
+    targetEye.x + fwd.x * lookDist,
+    targetEye.y + Math.sin(pitchRad) * lookDist + leanOffset,
+    targetEye.z + fwd.z * lookDist
+  );
+
+  // Faster response so head bob is actually felt (tau 0.10 vs previous 0.25)
+  const eyeAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.10);
+  const lookAlpha = snap ? 1 : 1 - Math.exp(-dt / 0.12);
   eyeFiltered.lerp(targetEye, eyeAlpha);
   lookFiltered.lerp(lookTarget, lookAlpha);
   camera.position.copy(eyeFiltered);
