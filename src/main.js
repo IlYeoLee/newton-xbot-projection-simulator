@@ -1091,13 +1091,12 @@ function getFootFrontPoint(side) {
 
 function planeCorners(mesh) {
   mesh.updateMatrixWorld(true);
-  const sx = mesh.scale.x;
-  const sy = mesh.scale.y;
+  // PlaneGeometry(1,1) has unit half-extents; scale is already in matrixWorld
   return [
-    [-sx / 2, -sy / 2, 0],
-    [sx / 2, -sy / 2, 0],
-    [sx / 2, sy / 2, 0],
-    [-sx / 2, sy / 2, 0]
+    [-0.5, -0.5, 0],
+    [0.5, -0.5, 0],
+    [0.5, 0.5, 0],
+    [-0.5, 0.5, 0]
   ].map((p) => mesh.localToWorld(new THREE.Vector3(...p)));
 }
 
