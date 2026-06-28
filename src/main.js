@@ -167,33 +167,36 @@ const ASSETS = {
 };
 
 const PRESETS = {
-  running: { label: '러닝 / 걷기', motions: ['Running', 'Standard Run'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.18, -2.25], height: 170, yaw: 180, tau: 0.03, fov: 50, pitch: -18, floorW: 95, floorD: 160, wallW: 42, wallH: 155 },
-  boxing: { label: '복싱 / 격투', motions: ['Hook', 'MMA Kick'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.25, -2.05], height: 170, yaw: 180, tau: 0.08, fov: 48, pitch: -12, floorW: 90, floorD: 160, wallW: 200, wallH: 200 },
-  fitness: { label: '홈트 / 근력', motions: ['Kettlebell Swing', 'Start Jumping Jacks'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.25, -2.15], height: 170, yaw: 180, tau: 0.1, fov: 48, pitch: -12, floorW: 110, floorD: 160, wallW: 200, wallH: 200 },
-  dance: { label: '댄스 / 리듬', motions: ['Hip Hop Dancing'], floor: [0, 0.012, -1.0], floorStart: 20, wall: [0, 1.35, -2.35], height: 170, yaw: 180, tau: 0.1, fov: 48, pitch: -10, floorW: 120, floorD: 160, wallW: 200, wallH: 200 }
+  idle:    { label: '제자리 대기', motions: [], floor: [0, 0.012, -1.0], floorStart: 40, wall: [0, 1.18, -2.25], height: 170, yaw: 180, tau: 0.12, fov: 50, pitch: -15, floorW: 90, floorD: 140, wallW: 160, wallH: 160 },
+  running: { label: '러닝 / 걷기', motions: ['Running', 'Standard Run'], floor: [0, 0.012, -1.0], floorStart: 40, wall: [0, 1.18, -2.25], height: 170, yaw: 180, tau: 0.03, fov: 50, pitch: -18, floorW: 95, floorD: 160, wallW: 42, wallH: 155 },
+  boxing:  { label: '복싱 / 격투', motions: ['Hook', 'MMA Kick'], floor: [0, 0.012, -1.0], floorStart: 40, wall: [0, 1.25, -2.05], height: 170, yaw: 180, tau: 0.08, fov: 48, pitch: -12, floorW: 90, floorD: 160, wallW: 200, wallH: 200 },
+  fitness: { label: '홈트 / 근력', motions: ['Kettlebell Swing', 'Start Jumping Jacks'], floor: [0, 0.012, -1.0], floorStart: 40, wall: [0, 1.25, -2.15], height: 170, yaw: 180, tau: 0.1, fov: 48, pitch: -12, floorW: 110, floorD: 160, wallW: 200, wallH: 200 },
+  dance:   { label: '댄스 / 리듬', motions: ['Hip Hop Dancing'], floor: [0, 0.012, -1.0], floorStart: 40, wall: [0, 1.35, -2.35], height: 170, yaw: 180, tau: 0.1, fov: 48, pitch: -10, floorW: 120, floorD: 160, wallW: 200, wallH: 200 }
 };
 
+// EYE_MODES pitch calibrated so floor projection center is visible in 1P view:
+// Eye h=1.58m, floor center ~1.18m ahead → 53° below horiz → need pitch+FOV/2 ≥ 53°
 const EYE_MODES = {
   neutral: {
     label: '정면 중심',
-    note: '28mm 풀프레임 근사 (수직 50°). 자연스러운 원근감으로 정면을 보며 바닥 UI를 확인하는 기본 설정.',
+    note: '자연스러운 전방 시선. 바닥 UI 원거리 끝부분만 시야 하단에 걸림. 몰입형 달리기 뷰.',
     fov: 50,
     pitch: -15,
     lowerField: 40
   },
   active: {
     label: '운동 기본',
-    note: '달리거나 운동 중 자연스럽게 시선이 약간 아래로 내려간 상태. 바닥 UI가 시야 하단에 들어옵니다.',
-    fov: 50,
-    pitch: -20,
-    lowerField: 45
+    note: '운동 중 자연스러운 하향 시선 (−30°). 바닥 UI 중심부가 시야 하단 1/3에 들어옵니다.',
+    fov: 54,
+    pitch: -30,
+    lowerField: 57
   },
   inspect: {
     label: '바닥 확인',
-    note: '고개를 많이 숙여 바닥 UI를 직접 확인하는 상태. 실제 투사 영역과 발자국 위치를 점검할 때 사용.',
-    fov: 52,
-    pitch: -30,
-    lowerField: 56
+    note: '바닥 UI 전체를 확인하는 모드 (−45°). 시야 하단 기준 발 앞 40cm까지 커버.',
+    fov: 58,
+    pitch: -45,
+    lowerField: 74
   }
 };
 
@@ -1242,7 +1245,7 @@ function updateProjection(dt) {
 }
 
 // Auto-move speed per preset (m/s); 0 = stationary exercise
-const AUTO_MOVE_SPEED = { running: 1.8, boxing: 0, fitness: 0, dance: 0 };
+const AUTO_MOVE_SPEED = { idle: 0, running: 1.8, boxing: 0, fitness: 0, dance: 0 };
 
 function updateUserMovement(dt) {
   const step = currentPreset === 'running' ? 1.8 : 0.9;

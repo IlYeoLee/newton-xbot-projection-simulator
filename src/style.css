@@ -125,7 +125,7 @@ body.hide-left.hide-right .main { justify-content: center; }
 .value { font-size: 11px; color: var(--red); font-weight: 950; font-variant-numeric: tabular-nums; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
-.preset { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.preset { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 7px; }
 .field { margin: 9px 0; }
 .pair { display: grid; grid-template-columns: 1fr 82px; gap: 8px; align-items: center; }
 .action-row { margin-top: 8px; }
