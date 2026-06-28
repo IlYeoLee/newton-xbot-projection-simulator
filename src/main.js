@@ -62,6 +62,7 @@ let rawPhase = 0;
 let modelHeight = 1.7;
 const userPosition = new THREE.Vector3(0, 0, 0);
 const moveKeys = new Set();
+let autoMove = true;
 const eyeFiltered = new THREE.Vector3(0, 1.58, 0.15);
 const lookFiltered = new THREE.Vector3(0, 1.36, -2.2);
 let gaitPhase = 0;
@@ -847,8 +848,16 @@ function bind() {
       moveKeys.add(e.code);
       e.preventDefault();
     }
+    // Space = toggle auto-move
+    if (e.code === 'Space') { autoMove = !autoMove; e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => moveKeys.delete(e.code));
+  const autoMoveBtn = by('autoMoveBtn');
+  if (autoMoveBtn) autoMoveBtn.addEventListener('click', () => {
+    autoMove = !autoMove;
+    autoMoveBtn.textContent = autoMove ? '자동이동 ON' : '자동이동 OFF';
+    autoMoveBtn.classList.toggle('active', autoMove);
+  });
   document.querySelectorAll('.card-toggle').forEach((button) => {
     button.addEventListener('click', () => {
       const card = by(button.dataset.card);
@@ -1232,15 +1241,30 @@ function updateProjection(dt) {
   updateHWPanel(dt, kneeModule, qStabFloor, planeCenterDist, floorStart, floorDepth, Number(by('floorW').value) / 100);
 }
 
+// Auto-move speed per preset (m/s); 0 = stationary exercise
+const AUTO_MOVE_SPEED = { running: 1.8, boxing: 0, fitness: 0, dance: 0 };
+
 function updateUserMovement(dt) {
-  const step = currentPreset === 'running' ? 1.05 : 0.72;
+  const step = currentPreset === 'running' ? 1.8 : 0.9;
   const manual = new THREE.Vector3();
-  if (moveKeys.has('KeyW') || moveKeys.has('ArrowUp')) manual.z -= 1;
-  if (moveKeys.has('KeyS') || moveKeys.has('ArrowDown')) manual.z += 1;
-  if (moveKeys.has('KeyA') || moveKeys.has('ArrowLeft')) manual.x -= 1;
-  if (moveKeys.has('KeyD') || moveKeys.has('ArrowRight')) manual.x += 1;
-  if (manual.lengthSq() > 0) manual.normalize().multiplyScalar(step * dt);
+  if (moveKeys.has('KeyW') || moveKeys.has('ArrowUp')) manual.copy(cachedModelFwd);
+  if (moveKeys.has('KeyS') || moveKeys.has('ArrowDown')) manual.copy(cachedModelFwd).negate();
+  if (moveKeys.has('KeyA') || moveKeys.has('ArrowLeft')) { manual.set(-cachedModelFwd.z, 0, cachedModelFwd.x); }
+  if (moveKeys.has('KeyD') || moveKeys.has('ArrowRight')) { manual.set(cachedModelFwd.z, 0, -cachedModelFwd.x); }
+
+  if (manual.lengthSq() > 0) {
+    manual.normalize().multiplyScalar(step * dt);
+  } else if (autoMove && activeAction) {
+    const autoSpeed = AUTO_MOVE_SPEED[currentPreset] ?? 0;
+    if (autoSpeed > 0) manual.copy(cachedModelFwd).multiplyScalar(autoSpeed * dt);
+  }
   userPosition.add(manual);
+
+  // Infinite ground: scroll ground/grid with player so world feels endless
+  ground.position.x = userPosition.x;
+  ground.position.z = userPosition.z;
+  grid.position.x = userPosition.x;
+  grid.position.z = userPosition.z;
 }
 
 function updateScenarioVisibility() {
