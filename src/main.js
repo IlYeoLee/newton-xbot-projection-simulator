@@ -987,9 +987,33 @@ function bind() {
       setTextIfPresent('mc-rms', `${r.meanRms.toFixed(1)} cm`);
       setTextIfPresent('mc-p95rms', `${r.p95rms.toFixed(1)} cm`);
       by('mcResults').style.display = '';
-      by('runMC').textContent = '⑥ Monte Carlo 재실행 (N=50)';
+      by('runMC').textContent = 'Monte Carlo 재실행 (N=50)';
       by('runMC').disabled = false;
     }, 10);
+  });
+
+  // Master realism toggle
+  function setRealismAll(on) {
+    imuEnabled = on; hfvEnabled = on; latEnabled = on; srvEnabled = on; kfEnabled = on;
+    ['imuNoise', 'hfv', 'lat', 'srv', 'kf'].forEach(f => setSimToggle(f, on));
+    resetHWStats(); resetKF();
+    by('realismOn').classList.toggle('active', on);
+    by('realismOff').classList.toggle('active', !on);
+    const desc = by('realismDesc');
+    if (desc) desc.innerHTML = on
+      ? '<b>실제 HW 모드</b>: IMU 노이즈 3mm σ · 기계진동 2cm/10Hz · 시스템 지연 50ms · 서보 대역폭 300°/s · 칼만 필터 보정 동작 중.'
+      : '<b>이상적 모드</b>: 노이즈·지연·대역폭 제한 없음. 순수 안정화 알고리즘만 동작.';
+  }
+  by('realismOn').addEventListener('click', () => setRealismAll(true));
+  by('realismOff').addEventListener('click', () => setRealismAll(false));
+
+  // Advanced params accordion
+  by('advancedRealismToggle').addEventListener('click', () => {
+    const body = by('advancedRealismBody');
+    const arrow = by('advancedRealismArrow');
+    const open = body.style.display === 'none';
+    body.style.display = open ? '' : 'none';
+    arrow.textContent = open ? '▼ 접기' : '▶ 펼치기';
   });
 }
 
