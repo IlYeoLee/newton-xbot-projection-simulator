@@ -1256,20 +1256,14 @@ function updateProjection(dt) {
   // ── Realism layer: get sensor-noisy knee estimate ──
   const sensed = getSensedKnee(kneeModule, dt);
 
-  // Servo auto-angle: IMU measures kneeH → compute exact ideal near-edge distance
   const kneeH = Math.max(0.15, sensed.y);
-  const PROJ_TARGET_DEG = 52.5;
-  // idealNearDist = kneeH / tan(52.5°): distance where projection angle = target
-  const idealNearDist = kneeH / Math.tan(THREE.MathUtils.degToRad(PROJ_TARGET_DEG));
-  // Servo can't project closer than slider minimum, but will push farther if needed
-  const effectiveNearDist = Math.max(floorStart, idealNearDist);
-  const distCorrect = (effectiveNearDist - floorStart); // servo offset from slider baseline
 
-  // Spring target derived from SENSED knee position
+  // Spring target: slider value IS the near-edge distance, servo just tracks it
+  // (kneeH used only for HW panel angle display, not for overriding the slider)
   const angleTarget = new THREE.Vector3(
-    sensed.x + modelFwd.x * (planeCenterDist + distCorrect),
+    sensed.x + modelFwd.x * planeCenterDist,
     0.012,
-    sensed.z + modelFwd.z * (planeCenterDist + distCorrect)
+    sensed.z + modelFwd.z * planeCenterDist
   );
 
   // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
@@ -1435,24 +1429,24 @@ function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, flo
   const rmsZ = Math.sqrt(sumZ2 / hwBufCount);
   const cov = hwCovTotal > 0 ? (hwCovHits / hwCovTotal * 100) : 100;
 
-  // ② Lens / throw specs — use servo-adjusted effective near distance
-  const idealNearDistHW = kneeH / Math.tan(THREE.MathUtils.degToRad(52.5));
-  const effectiveNearDistHW = Math.max(floorStart, idealNearDistHW);
-  const servoOffsetCm = (effectiveNearDistHW - floorStart) * 100;
-  const nearCm = effectiveNearDistHW * 100;
-  const farCm = (effectiveNearDistHW + floorDepth) * 100;
+  // ② Lens / throw specs — slider value IS the near distance (no auto-override)
+  const nearCm = floorStart * 100;
+  const farCm = (floorStart + floorDepth) * 100;
   const throwRatio = (kneeH / Math.max(0.01, floorW)).toFixed(2);
-  const hFovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan2(floorW / 2, Math.max(0.01, effectiveNearDistHW)));
-  const vFovDeg = THREE.MathUtils.radToDeg(Math.atan2(effectiveNearDistHW + floorDepth, kneeH))
-               - THREE.MathUtils.radToDeg(Math.atan2(effectiveNearDistHW, kneeH));
+  const hFovDeg = 2 * THREE.MathUtils.radToDeg(Math.atan2(floorW / 2, Math.max(0.01, floorStart)));
+  const vFovDeg = THREE.MathUtils.radToDeg(Math.atan2(floorStart + floorDepth, kneeH))
+               - THREE.MathUtils.radToDeg(Math.atan2(floorStart, kneeH));
+  // Display reference: how far current angle deviates from 52.5° target
+  const currentProjAngleDeg = THREE.MathUtils.radToDeg(Math.atan2(kneeH, Math.max(0.01, floorStart)));
+  const servoOffsetCm = 0; // servo no longer overrides slider
 
   setTextIfPresent('hw-pitch-angle', `${pitchDeg.toFixed(1)}°`);
   setTextIfPresent('hw-pitch-vel', `${pitchVel.toFixed(1)} °/s`);
   setTextIfPresent('hw-pitch-vel-max', `${hwMaxPitchVel.toFixed(1)} °/s`);
   setTextIfPresent('hw-pitch-acc-max', `${hwMaxPitchAcc.toFixed(0)} °/s²`);
   setTextIfPresent('hw-pitch-range', hwPitchMin <= hwPitchMax ? `${hwPitchMin.toFixed(1)}° ~ ${hwPitchMax.toFixed(1)}°` : '-');
-  setTextIfPresent('hw-servo-offset', servoOffsetCm > 0.5 ? `+${servoOffsetCm.toFixed(1)} cm` : '보정 없음');
-  setTextIfPresent('hw-near-dist', `${nearCm.toFixed(0)} cm (슬라이더: ${(floorStart*100).toFixed(0)}cm)`);
+  setTextIfPresent('hw-proj-angle', `${currentProjAngleDeg.toFixed(1)}° (권장 52.5°)`);
+  setTextIfPresent('hw-near-dist', `${nearCm.toFixed(0)} cm`);
   setTextIfPresent('hw-far-dist', `${farCm.toFixed(0)} cm`);
   setTextIfPresent('hw-throw-ratio', `${throwRatio} (h/W)`);
   setTextIfPresent('hw-fov-h', `${hFovDeg.toFixed(1)}°`);
