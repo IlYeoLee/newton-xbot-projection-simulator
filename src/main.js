@@ -58,6 +58,7 @@ let tau = 0.18;
 let kneeSide = 'right';
 let modelLoaded = false;
 let qStabFloor = new THREE.Vector3(0, 0.012, -1.15);
+let lastIdealTarget = new THREE.Vector3(0, 0.012, -1.15); // latest computed ideal floor center
 let qStabWall = new THREE.Vector3(0, 1.18, -2.25);
 let previousPreset = currentPreset;
 let rawPhase = 0;
@@ -744,7 +745,8 @@ function setPreset(p, apply = true) {
   setNumberPair('wallZ', Math.abs(preset.wall[2] * 100));
   yaw = preset.yaw;
   tau = preset.tau;
-  qStabFloor.fromArray(preset.floor);
+  // Use lastIdealTarget if available (body-relative), otherwise fall back to preset world coords
+  qStabFloor.copy(lastIdealTarget.lengthSq() > 0.001 ? lastIdealTarget : new THREE.Vector3().fromArray(preset.floor));
   qStabWall.fromArray(preset.wall);
   updateSurfaceFromInputs(true);
   syncControlLabels();
@@ -797,6 +799,11 @@ function setEyeMode(mode) {
 }
 
 function setStab(v) {
+  if (v && !stabilize) {
+    // Snap spring to current ideal position on enable — avoids jump from old world coords
+    qStabFloor.copy(lastIdealTarget);
+    stabVelocity.set(0, 0, 0);
+  }
   stabilize = v;
   by('stabOn').classList.toggle('active', v);
   by('stabOff').classList.toggle('active', !v);
@@ -1164,10 +1171,13 @@ function setBeam(mesh, apex, corners) {
 
 function updateEyeFov() {
   if (!eyeFovLines) return;
-  eyeFovLines.visible = eyeFovVisible;
-  if (!eyeFovVisible) return;
+  // Hide in 1st-person view (camera is inside the head — near clip eats the lines)
+  const inEyeView = currentView === 'eye';
+  eyeFovLines.visible = eyeFovVisible && !inEyeView;
+  if (!eyeFovLines.visible) return;
 
   const eye = getWorld(eyeBone, 'E');
+  if (!eye || isNaN(eye.x)) return;
   const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -15));
   const fovVRad = THREE.MathUtils.degToRad(Number(by('fov').value || 50));
   const fovHRad = 2 * Math.atan(Math.tan(fovVRad / 2) * camera.aspect);
@@ -1267,6 +1277,7 @@ function updateProjection(dt) {
     0.012,
     bodyPos.z + modelFwd.z * (STANCE_TOE_OFFSET + planeCenterDist)
   );
+  lastIdealTarget.copy(angleTarget);
 
   // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
   floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
