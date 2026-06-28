@@ -851,6 +851,55 @@ function setStabMode(mode) {
 
   // Show/hide tau slider (not relevant in off mode)
   const tf = by('tauField'); if (tf) tf.style.display = mode === 'off' ? 'none' : '';
+
+  // Update detail panel content for currently selected mode
+  const STAB_DETAILS = {
+    off: `<div style="color:#ffd166;font-weight:900;margin-bottom:6px">■ 서보 비활성 (Raw Tracking)</div>
+무릎 모듈 XZ 좌표가 지연·필터 없이 투사면 중심에 직접 반영됩니다.<br><br>
+<b>달리기 중 무릎 진동:</b> 보행 주기(약 0.5s)마다 무릎이 ±30~50cm 전후로 이동<br>
+→ 투사면이 같은 폭으로 흔들리며 사용자에게 불안정하게 보임.<br><br>
+<b>장치 관점:</b> 전원은 켜졌지만 서보 제어 미작동 상태. 프로토타입 초기
+비교 기준(baseline)으로 사용.`,
+
+    ideal: `<div style="color:#67f2a7;font-weight:900;margin-bottom:6px">■ 2차 스프링-댐퍼 서보 (Spring-Damper)</div>
+<b>수식:</b> <code>a = Ks·(target − pos) − Kd·vel</code><br>
+&nbsp;&nbsp;Ks = 22 &nbsp;→ 스프링 강성 (복원력)<br>
+&nbsp;&nbsp;Kd = 9 &nbsp;&nbsp;→ 임계 제동 (Kd ≈ 2√Ks, 오버슈트 없음)<br><br>
+<b>특성값:</b><br>
+&nbsp;&nbsp;자연 진동수 ωn = √22 ≈ 4.7 rad/s<br>
+&nbsp;&nbsp;제동비 ζ = Kd / (2ωn) ≈ 0.96 → 임계 제동<br>
+&nbsp;&nbsp;정착 시간 ≈ 4/ωn ≈ 0.85s (목표 ±2% 이내)<br><br>
+<b>목표점 계산:</b><br>
+&nbsp;&nbsp;이상 목표 = bodyPos + modelFwd × (발끝 보정 45cm + 바닥 중심 거리)<br>
+&nbsp;&nbsp;센서 완벽 가정 → 노이즈·지연 없이 목표 즉시 인식<br><br>
+<b>서보 반응 속도 (tau 슬라이더):</b><br>
+&nbsp;&nbsp;tau ↓: 목표를 빠르게 추적 / 고주파 떨림이 통과될 수 있음<br>
+&nbsp;&nbsp;tau ↑: 흔들림 억제 강화 / 방향 전환 시 지연 증가<br>
+&nbsp;&nbsp;권장: 러닝 0.03s · 복싱 0.08s · 홈트 0.10s · 댄스 0.10s`,
+
+    hw: `<div style="color:#ff8585;font-weight:900;margin-bottom:6px">■ 실제 HW 제약 시뮬레이션</div>
+이상적 보정(스프링-댐퍼)에 아래 HW 제약이 레이어로 추가됩니다.<br><br>
+<b>① IMU 노이즈 σ = 3mm</b><br>
+&nbsp;&nbsp;MEMS 가속도계 노이즈 기준. 가우시안 분포로 무릎 위치 추정에<br>
+&nbsp;&nbsp;매 프레임 ±3mm 불확실성 주입 → 투사면 미세 떨림 원인.<br><br>
+<b>② 고주파 기계 진동 2cm / 10Hz</b><br>
+&nbsp;&nbsp;달리기 발 착지 충격이 무릎 장치에 10Hz 진동 유발.<br>
+&nbsp;&nbsp;서보 대역폭(~5Hz) 초과 주파수 → 칼만 필터로도 완전 제거 불가.<br><br>
+<b>③ 시스템 지연 50ms</b><br>
+&nbsp;&nbsp;IMU 샘플링(200Hz) → MCU 처리 → BLE 패킷 → 서보 명령 파이프라인.<br>
+&nbsp;&nbsp;1.8m/s 러닝 기준 50ms = 약 9cm 전진 — 목표점이 그만큼 뒤에서 계산됨.<br><br>
+<b>④ 서보 대역폭 300°/s</b><br>
+&nbsp;&nbsp;물리 서보 모터 최대 각속도. 급격한 방향 전환 시 목표 추종 불가<br>
+&nbsp;&nbsp;(saturating) 구간 발생 → 투사면 일시 지연.<br><br>
+<b>⑤ 칼만 필터 (Q=0.04, R=0.0009)</b><br>
+&nbsp;&nbsp;상태 추정기. IMU 노이즈를 최소화하면서 실제 무릎 위치 추정.<br>
+&nbsp;&nbsp;Q = 프로세스 노이즈 (몸 움직임 불확실성)<br>
+&nbsp;&nbsp;R = 측정 노이즈 (IMU 센서 신뢰도)<br>
+&nbsp;&nbsp;Q/R ↑ → 센서 더 신뢰, 반응 빠름, 노이즈 통과 多<br>
+&nbsp;&nbsp;Q/R ↓ → 예측 모델 더 신뢰, 부드러움, 반응 지연`
+  };
+  const detail = by('stabDetail');
+  if (detail) detail.innerHTML = STAB_DETAILS[mode] || '';
 }
 
 function setStab(v) { setStabMode(v ? 'ideal' : 'off'); }
@@ -872,6 +921,13 @@ function bind() {
   by('stabOn').addEventListener('click', () => setStabMode('ideal'));
   by('stabOff').addEventListener('click', () => setStabMode('off'));
   if (by('stabHW')) by('stabHW').addEventListener('click', () => setStabMode('hw'));
+  if (by('stabDetailToggle')) by('stabDetailToggle').addEventListener('click', () => {
+    const d = by('stabDetail');
+    const t = by('stabDetailToggle');
+    const open = d.style.display === 'none';
+    d.style.display = open ? '' : 'none';
+    t.textContent = open ? '▼ 알고리즘 상세 닫기' : '▶ 알고리즘 상세 보기';
+  });
   by('floorBeamToggle').addEventListener('click', () => {
     floorBeamVisible = !floorBeamVisible;
     updateBeamToggleLabels();
