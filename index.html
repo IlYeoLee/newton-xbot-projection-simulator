@@ -99,10 +99,14 @@
             </section>
 
             <section class="sec">
-              <h2>04 투사 안정화 <span>Projection logic</span></h2>
-              <div class="grid2">
-                <button id="stabOn" class="active">안정화 ON</button>
-                <button id="stabOff">안정화 OFF</button>
+              <h2>04 투사 보정 수준 <span>Stabilization mode</span></h2>
+              <div class="grid3" style="margin-bottom:10px">
+                <button id="stabOff" type="button">보정 없음</button>
+                <button id="stabOn" class="active" type="button">이상적 보정</button>
+                <button id="stabHW" type="button">실제 HW</button>
+              </div>
+              <div id="stabDesc" class="mini" style="line-height:1.7;margin-bottom:10px">
+                <b>이상적 보정</b>: 센서 완벽·지연 없음. 서보 스프링이 몸 움직임만 흡수.
               </div>
               <div class="field">
                 <label>무릎 빔프로젝터 위치</label>
@@ -111,11 +115,11 @@
                   <option value="left">왼쪽 무릎 1개</option>
                 </select>
               </div>
-              <div class="field">
-                <div class="row"><label>보정 반응 속도</label><span class="value" id="tauVal">0.18s</span></div>
+              <div class="field" id="tauField">
+                <div class="row"><label>서보 반응 속도</label><span class="value" id="tauVal">0.18s</span></div>
                 <div class="pair"><input id="tau" type="range" min="0.03" max="0.6" step="0.01" value="0.18"><input id="tauN" type="number" min="0.03" max="0.6" step="0.01" value="0.18"></div>
+                <p class="mini" style="margin-top:4px">낮을수록 빠르게 따라가고, 높을수록 흔들림을 더 부드럽게 잡습니다.</p>
               </div>
-              <p class="mini">값이 낮으면 무릎/몸 움직임을 빠르게 따라가고, 높으면 흔들림을 더 부드럽게 줄입니다. ON은 사용자 앞쪽 목표점을 따라가며 보정하고, OFF는 무릎 흔들림이 더 직접적으로 보입니다.</p>
             </section>
 
             <section class="sec">
@@ -195,66 +199,26 @@
               <p class="mini">시야콘(파란 선): 3인칭 뷰에서 눈 위치 기준 실제 시야 범위와 바닥 투영 영역 표시.</p>
             </section>
 
-            <section class="sec">
-              <h2>08 시뮬레이션 정밀도 <span>현실화 레이어</span></h2>
-
-              <!-- 마스터 토글 -->
-              <div class="sim-feat" style="text-align:center">
-                <div class="sim-label" style="margin-bottom:10px">전체 보정 수준</div>
-                <div class="grid2" style="margin-bottom:10px">
-                  <button id="realismOff" class="active">이상적 OFF</button>
-                  <button id="realismOn">실제 HW ON</button>
-                </div>
-                <div id="realismDesc" class="mini" style="text-align:left;line-height:1.7">
-                  <b>이상적 모드</b>: 노이즈·지연·대역폭 제한 없음. 순수 안정화 알고리즘만 동작.
-                </div>
-              </div>
-
-              <!-- Monte Carlo -->
-              <div class="sim-feat">
-                <div class="sim-label" style="margin-bottom:6px">Monte Carlo 검증 (N=50)</div>
-                <button id="runMC" type="button" style="width:100%;margin-bottom:8px">실행 (현재 보정 상태 기준, ~1초)</button>
-                <p class="mini">50회 파라메트릭 보행 시뮬레이션으로 편차 분포 산출.</p>
-                <div id="mcResults" style="display:none">
-                  <div class="metric"><span>P50 최대 편차</span><span id="mc-p50" class="ok mono">-</span></div>
-                  <div class="metric"><span>P95 최대 편차</span><span id="mc-p95" class="warn mono">-</span></div>
-                  <div class="metric"><span>P99 최대 편차</span><span id="mc-p99" class="bad mono">-</span></div>
-                  <div class="metric"><span>평균 RMS 편차</span><span id="mc-rms" class="mono">-</span></div>
-                  <div class="metric"><span>P95 RMS 편차</span><span id="mc-p95rms" class="warn mono">-</span></div>
-                </div>
-              </div>
-
-              <!-- 고급 파라미터 (접힌 상태) -->
-              <div class="sim-feat" id="advancedRealismCard">
-                <div class="sim-label" style="cursor:pointer;display:flex;justify-content:space-between" id="advancedRealismToggle">
-                  고급 파라미터 <span id="advancedRealismArrow">▶ 펼치기</span>
-                </div>
-                <div id="advancedRealismBody" style="display:none;margin-top:10px">
-                  <div class="sim-label" style="font-size:9px">① IMU 노이즈</div>
-                  <div class="grid2" style="margin-bottom:6px"><button id="imuNoiseOn">ON</button><button id="imuNoiseOff" class="active">OFF</button></div>
-                  <div class="field"><div class="row"><label>σ 가속도 노이즈</label><span class="value" id="imuSigmaVal">3 mm</span></div><div class="pair"><input id="imuSigma" type="range" min="0" max="20" step="0.5" value="3"><input id="imuSigmaN" type="number" min="0" max="20" step="0.5" value="3"></div></div>
-                  <div class="field"><div class="row"><label>자이로 드리프트</label><span class="value" id="imuDriftVal">0.1 °/s</span></div><div class="pair"><input id="imuDrift" type="range" min="0" max="2" step="0.05" value="0.1"><input id="imuDriftN" type="number" min="0" max="2" step="0.05" value="0.1"></div></div>
-
-                  <div class="sim-label" style="font-size:9px;margin-top:8px">② 고주파 진동</div>
-                  <div class="grid2" style="margin-bottom:6px"><button id="hfvOn">ON</button><button id="hfvOff" class="active">OFF</button></div>
-                  <div class="field"><div class="row"><label>진폭</label><span class="value" id="hfvAmpVal">2 cm</span></div><div class="pair"><input id="hfvAmp" type="range" min="0" max="5" step="0.5" value="2"><input id="hfvAmpN" type="number" min="0" max="5" step="0.5" value="2"></div></div>
-                  <div class="field"><div class="row"><label>주파수</label><span class="value" id="hfvFreqVal">10 Hz</span></div><div class="pair"><input id="hfvFreq" type="range" min="5" max="20" step="1" value="10"><input id="hfvFreqN" type="number" min="5" max="20" step="1" value="10"></div></div>
-
-                  <div class="sim-label" style="font-size:9px;margin-top:8px">③ 시스템 지연</div>
-                  <div class="grid2" style="margin-bottom:6px"><button id="latOn">ON</button><button id="latOff" class="active">OFF</button></div>
-                  <div class="field"><div class="row"><label>센서→서보 지연</label><span class="value" id="latDelayVal">50 ms</span></div><div class="pair"><input id="latDelay" type="range" min="0" max="100" step="5" value="50"><input id="latDelayN" type="number" min="0" max="100" step="5" value="50"></div></div>
-
-                  <div class="sim-label" style="font-size:9px;margin-top:8px">④ 서보 대역폭</div>
-                  <div class="grid2" style="margin-bottom:6px"><button id="srvOn">ON</button><button id="srvOff" class="active">OFF</button></div>
-                  <div class="field"><div class="row"><label>최대 각속도</label><span class="value" id="srvMaxVelVal">300 °/s</span></div><div class="pair"><input id="srvMaxVel" type="range" min="50" max="600" step="10" value="300"><input id="srvMaxVelN" type="number" min="50" max="600" step="10" value="300"></div></div>
-
-                  <div class="sim-label" style="font-size:9px;margin-top:8px">⑤ 칼만 필터</div>
-                  <div class="grid2" style="margin-bottom:6px"><button id="kfOn">ON</button><button id="kfOff" class="active">OFF</button></div>
-                  <div class="field"><div class="row"><label>프로세스 노이즈 Q</label><span class="value" id="kfQVal">0.04</span></div><div class="pair"><input id="kfQ" type="range" min="0.001" max="0.3" step="0.001" value="0.04"><input id="kfQN" type="number" min="0.001" max="0.3" step="0.001" value="0.04"></div></div>
-                  <div class="field"><div class="row"><label>측정 노이즈 R</label><span class="value" id="kfRVal">0.0009</span></div><div class="pair"><input id="kfR" type="range" min="0.0001" max="0.05" step="0.0001" value="0.0009"><input id="kfRN" type="number" min="0.0001" max="0.05" step="0.0001" value="0.0009"></div></div>
-                </div>
-              </div>
-            </section>
+            <!-- hidden elements preserved for JS compatibility -->
+            <div style="display:none">
+              <button id="realismOff"></button><button id="realismOn"></button>
+              <button id="imuNoiseOn"></button><button id="imuNoiseOff"></button>
+              <button id="hfvOn"></button><button id="hfvOff"></button>
+              <button id="latOn"></button><button id="latOff"></button>
+              <button id="srvOn"></button><button id="srvOff"></button>
+              <button id="kfOn"></button><button id="kfOff"></button>
+              <button id="runMC"></button>
+              <span id="realismDesc"></span>
+              <div id="mcResults"><span id="mc-p50"></span><span id="mc-p95"></span><span id="mc-p99"></span><span id="mc-rms"></span><span id="mc-p95rms"></span></div>
+              <input id="imuSigma" value="3"><input id="imuSigmaN" value="3"><span id="imuSigmaVal"></span>
+              <input id="imuDrift" value="0.1"><input id="imuDriftN" value="0.1"><span id="imuDriftVal"></span>
+              <input id="hfvAmp" value="2"><input id="hfvAmpN" value="2"><span id="hfvAmpVal"></span>
+              <input id="hfvFreq" value="10"><input id="hfvFreqN" value="10"><span id="hfvFreqVal"></span>
+              <input id="latDelay" value="50"><input id="latDelayN" value="50"><span id="latDelayVal"></span>
+              <input id="srvMaxVel" value="300"><input id="srvMaxVelN" value="300"><span id="srvMaxVelVal"></span>
+              <input id="kfQ" value="0.04"><input id="kfQN" value="0.04"><span id="kfQVal"></span>
+              <input id="kfR" value="0.0009"><input id="kfRN" value="0.0009"><span id="kfRVal"></span>
+            </div>
           </div>
         </aside>
 

@@ -798,18 +798,62 @@ function setEyeMode(mode) {
   if (currentView === 'eye') updateFirstPersonCamera(0.016, true);
 }
 
-function setStab(v) {
-  if (v && !stabilize) {
-    // Snap spring to current ideal position on enable — avoids jump from old world coords
+function setSimToggle(feature, on) {
+  const onBtn = by(`${feature}On`), offBtn = by(`${feature}Off`);
+  if (onBtn) onBtn.classList.toggle('active', on);
+  if (offBtn) offBtn.classList.toggle('active', !on);
+}
+
+function setRealismAll(on) {
+  imuEnabled = on; hfvEnabled = on; latEnabled = on; srvEnabled = on; kfEnabled = on;
+  ['imuNoise', 'hfv', 'lat', 'srv', 'kf'].forEach(f => setSimToggle(f, on));
+  resetHWStats(); resetKF();
+  if (by('realismOn')) by('realismOn').classList.toggle('active', on);
+  if (by('realismOff')) by('realismOff').classList.toggle('active', !on);
+}
+
+// stabMode: 'off' | 'ideal' | 'hw'
+let stabMode = 'ideal';
+
+function setStabMode(mode) {
+  const wasOff = !stabilize;
+  stabMode = mode;
+  const nowOn = mode !== 'off';
+
+  if (nowOn && wasOff) {
     qStabFloor.copy(lastIdealTarget);
     stabVelocity.set(0, 0, 0);
   }
-  stabilize = v;
-  by('stabOn').classList.toggle('active', v);
-  by('stabOff').classList.toggle('active', !v);
-  by('stabState').textContent = v ? 'ON' : 'OFF';
-  by('stabState').className = v ? 'ok' : 'warn';
+  stabilize = nowOn;
+
+  // HW realism flags
+  const hw = mode === 'hw';
+  setRealismAll(hw);
+
+  // Button states
+  ['stabOff', 'stabOn', 'stabHW'].forEach(id => {
+    const el = by(id); if (el) el.classList.remove('active');
+  });
+  const activeId = mode === 'off' ? 'stabOff' : mode === 'hw' ? 'stabHW' : 'stabOn';
+  const activeEl = by(activeId); if (activeEl) activeEl.classList.add('active');
+
+  // Status
+  const stateEl = by('stabState');
+  if (stateEl) { stateEl.textContent = mode === 'off' ? 'OFF' : mode === 'hw' ? 'HW' : 'ON'; stateEl.className = mode === 'off' ? 'warn' : 'ok'; }
+
+  // Desc
+  const desc = by('stabDesc');
+  if (desc) desc.innerHTML = {
+    off:   '<b>보정 없음</b>: 무릎 흔들림이 투사에 그대로 반영됩니다.',
+    ideal: '<b>이상적 보정</b>: 센서 완벽·지연 없음. 서보 스프링이 몸 움직임만 흡수.',
+    hw:    '<b>실제 HW 보정</b>: IMU 노이즈 3mm · 지연 50ms · 서보 대역폭 300°/s · 칼만 필터 동작.'
+  }[mode];
+
+  // Show/hide tau slider (not relevant in off mode)
+  const tf = by('tauField'); if (tf) tf.style.display = mode === 'off' ? 'none' : '';
 }
+
+function setStab(v) { setStabMode(v ? 'ideal' : 'off'); }
 
 function bind() {
   document.querySelectorAll('[data-view]').forEach((btn) => btn.addEventListener('click', () => setView(btn.dataset.view)));
@@ -825,8 +869,9 @@ function bind() {
   by('animFiles').addEventListener('change', (e) => registerAnimFiles(e.target.files));
   by('motionSelect').addEventListener('change', (e) => selectMotion(e.target.value));
   by('kneeSide').addEventListener('change', (e) => setKneeSide(e.target.value));
-  by('stabOn').addEventListener('click', () => setStab(true));
-  by('stabOff').addEventListener('click', () => setStab(false));
+  by('stabOn').addEventListener('click', () => setStabMode('ideal'));
+  by('stabOff').addEventListener('click', () => setStabMode('off'));
+  if (by('stabHW')) by('stabHW').addEventListener('click', () => setStabMode('hw'));
   by('floorBeamToggle').addEventListener('click', () => {
     floorBeamVisible = !floorBeamVisible;
     updateBeamToggleLabels();
@@ -955,11 +1000,6 @@ function bind() {
   });
 
   // ── Section 08: Simulation realism ──
-  function setSimToggle(feature, on) {
-    const onBtn = by(`${feature}On`), offBtn = by(`${feature}Off`);
-    if (onBtn) onBtn.classList.toggle('active', on);
-    if (offBtn) offBtn.classList.toggle('active', !on);
-  }
   by('imuNoiseOn').addEventListener('click', () => { imuEnabled = true; setSimToggle('imuNoise', true); resetHWStats(); });
   by('imuNoiseOff').addEventListener('click', () => { imuEnabled = false; setSimToggle('imuNoise', false); resetHWStats(); });
   bindPair('imuSigma', 'imuSigmaN', (v) => { imuSigmaAcc = Number(v); by('imuSigmaVal').textContent = `${v} mm`; });
@@ -999,29 +1039,8 @@ function bind() {
     }, 10);
   });
 
-  // Master realism toggle
-  function setRealismAll(on) {
-    imuEnabled = on; hfvEnabled = on; latEnabled = on; srvEnabled = on; kfEnabled = on;
-    ['imuNoise', 'hfv', 'lat', 'srv', 'kf'].forEach(f => setSimToggle(f, on));
-    resetHWStats(); resetKF();
-    by('realismOn').classList.toggle('active', on);
-    by('realismOff').classList.toggle('active', !on);
-    const desc = by('realismDesc');
-    if (desc) desc.innerHTML = on
-      ? '<b>실제 HW 모드</b>: IMU 노이즈 3mm σ · 기계진동 2cm/10Hz · 시스템 지연 50ms · 서보 대역폭 300°/s · 칼만 필터 보정 동작 중.'
-      : '<b>이상적 모드</b>: 노이즈·지연·대역폭 제한 없음. 순수 안정화 알고리즘만 동작.';
-  }
-  by('realismOn').addEventListener('click', () => setRealismAll(true));
-  by('realismOff').addEventListener('click', () => setRealismAll(false));
-
-  // Advanced params accordion
-  by('advancedRealismToggle').addEventListener('click', () => {
-    const body = by('advancedRealismBody');
-    const arrow = by('advancedRealismArrow');
-    const open = body.style.display === 'none';
-    body.style.display = open ? '' : 'none';
-    arrow.textContent = open ? '▼ 접기' : '▶ 펼치기';
-  });
+  if (by('realismOn')) by('realismOn').addEventListener('click', () => setRealismAll(true));
+  if (by('realismOff')) by('realismOff').addEventListener('click', () => setRealismAll(false));
 }
 
 function resetSettings() {
