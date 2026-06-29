@@ -755,7 +755,7 @@ function setPreset(p, apply = true) {
   setNumberPair('pitch', preset.pitch);
   setNumberPair('floorW', preset.floorW);
   setNumberPair('floorD', preset.floorD);
-  setNumberPair('floorZ', preset.floorStart ?? 20);
+  // floorZ is auto-calculated from height+pitch+fov — preset hardcoded value is ignored
   setNumberPair('wallW', preset.wallW);
   setNumberPair('wallH', preset.wallH);
   setNumberPair('wallZ', Math.abs(preset.wall[2] * 100));
@@ -764,6 +764,7 @@ function setPreset(p, apply = true) {
   // Use lastIdealTarget if available (body-relative), otherwise fall back to preset world coords
   qStabFloor.copy(lastIdealTarget.lengthSq() > 0.001 ? lastIdealTarget : new THREE.Vector3().fromArray(preset.floor));
   qStabWall.fromArray(preset.wall);
+  autoFloorStart();
   updateSurfaceFromInputs(true);
   syncControlLabels();
   refreshMotionSelect();
@@ -996,6 +997,22 @@ function setStabMode(mode) {
 
 function setStab(v) { setStabMode(v ? 'ideal' : 'off'); }
 
+// Auto-calculate floorStart so the near edge aligns with the natural gaze floor-hit point.
+// Formula: floorStart = eyeH / tan(|pitch - fov/2|) - BODY_TO_TOE
+// This ensures the projection begins exactly where the lower FOV edge meets the floor.
+function autoFloorStart() {
+  const h = Number(by('height').value || 170) / 100;
+  const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -18));
+  const fovVRad = THREE.MathUtils.degToRad(Number(by('fov').value || 50));
+  const eyeH = h * 0.93;
+  const BODY_TO_TOE = h * 0.35;
+  const lowerAngle = pitchRad - fovVRad / 2;
+  if (lowerAngle >= 0) return; // gaze not pointing down — skip
+  const floorNear = eyeH / Math.tan(-lowerAngle);
+  const startCm = Math.round(Math.max(20, (floorNear - BODY_TO_TOE) * 100) / 5) * 5;
+  setNumberPair('floorZ', Math.min(300, startCm));
+}
+
 function bind() {
   document.querySelectorAll('[data-view]').forEach((btn) => btn.addEventListener('click', () => setView(btn.dataset.view)));
   document.querySelectorAll('[data-preset]').forEach((btn) => btn.addEventListener('click', () => setPreset(btn.dataset.preset)));
@@ -1125,6 +1142,7 @@ function bind() {
   bindPair('height', 'heightN', (v) => {
     by('heightVal').textContent = `${v} cm`;
     if (modelRoot) fitModel();
+    autoFloorStart();
   });
   bindPair('tau', 'tauN', (v) => {
     tau = Number(v);
@@ -1144,10 +1162,12 @@ function bind() {
     camera.fov = Number(v);
     camera.updateProjectionMatrix();
     by('fovVal').textContent = `${v}°`;
+    autoFloorStart();
   });
   bindPair('pitch', 'pitchN', (v) => {
     by('pitchVal').textContent = `${v}°`;
     if (currentView === 'eye') setView('eye');
+    autoFloorStart();
   });
   bindPair('surfaceTextSize', 'surfaceTextSizeN', (v) => {
     surfaceState[activeSurface].textSize = Number(v);
