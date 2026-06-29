@@ -59,8 +59,11 @@ let kneeSide = 'right';
 let modelLoaded = false;
 let qStabFloor = new THREE.Vector3(0, 0.012, -1.15);
 let lastIdealTarget = new THREE.Vector3(0, 0.012, -1.15);
-let stabMode = 'ideal'; // 'off' | 'ideal' | 'hw'
+let stabMode = 'ideal'; // 'off' | 'ideal' | 'hw' | 'ois'
 let stabInitialized = false; // snap qStabFloor to lastIdealTarget on first valid projection frame
+// OIS + SW mode state
+const qOisSettled = new THREE.Vector3(0, 0.012, -1.15);
+let oisInitialized = false;
 let qStabWall = new THREE.Vector3(0, 1.18, -2.25);
 let previousPreset = currentPreset;
 let rawPhase = 0;
@@ -836,27 +839,34 @@ function setStabMode(mode) {
   }
   stabilize = nowOn;
 
-  // HW realism flags
+  // HW realism flags (OIS mode: SW-only, no HW servo realism)
   const hw = mode === 'hw';
   setRealismAll(hw);
 
+  // Reset OIS state when entering/leaving OIS mode
+  if (mode === 'ois') { oisInitialized = false; }
+
   // Button states
-  ['stabOff', 'stabOn', 'stabHW'].forEach(id => {
+  ['stabOff', 'stabOn', 'stabHW', 'stabOIS'].forEach(id => {
     const el = by(id); if (el) el.classList.remove('active');
   });
-  const activeId = mode === 'off' ? 'stabOff' : mode === 'hw' ? 'stabHW' : 'stabOn';
+  const activeId = mode === 'off' ? 'stabOff' : mode === 'hw' ? 'stabHW' : mode === 'ois' ? 'stabOIS' : 'stabOn';
   const activeEl = by(activeId); if (activeEl) activeEl.classList.add('active');
 
   // Status
   const stateEl = by('stabState');
-  if (stateEl) { stateEl.textContent = mode === 'off' ? 'OFF' : mode === 'hw' ? 'HW' : 'ON'; stateEl.className = mode === 'off' ? 'warn' : 'ok'; }
+  if (stateEl) {
+    stateEl.textContent = mode === 'off' ? 'OFF' : mode === 'hw' ? 'HW' : mode === 'ois' ? 'OIS' : 'ON';
+    stateEl.className = mode === 'off' ? 'warn' : 'ok';
+  }
 
   // Desc
   const desc = by('stabDesc');
   if (desc) desc.innerHTML = {
     off:   '<b>보정 없음</b>: 무릎 흔들림이 투사에 그대로 반영됩니다.',
     ideal: '<b>이상적 보정</b>: 센서 완벽·지연 없음. 서보 스프링이 몸 움직임만 흡수.',
-    hw:    '<b>실제 HW 보정</b>: IMU 노이즈 3mm · 지연 50ms · 서보 대역폭 300°/s · 칼만 필터 동작.'
+    hw:    '<b>실제 HW 보정</b>: IMU 노이즈 3mm · 지연 50ms · 서보 대역폭 300°/s · 칼만 필터 동작.',
+    ois:   '<b>OIS + 소프트웨어</b>: 서보 없음. bodyPos 기반 SW 보정(±85%) + OIS ±7.5cm 범위 내 잔여 떨림 흡수.'
   }[mode];
 
   // Show/hide tau slider (not relevant in off mode)
@@ -941,7 +951,30 @@ function setStabMode(mode) {
 &nbsp;&nbsp;• IMU: ICM-42688-P 약 $2<br>
 &nbsp;&nbsp;• MCU: STM32G0 약 $1.5<br>
 &nbsp;&nbsp;• 2축 짐벌 서보(25g): 약 $8~15<br>
-&nbsp;&nbsp;→ 총 하드웨어 추가 원가 <b>$15~25 수준</b>에서 구현 가능`
+&nbsp;&nbsp;→ 총 하드웨어 추가 원가 <b>$15~25 수준</b>에서 구현 가능`,
+
+    ois: `<div style="color:#67f2a7;font-weight:900;margin-bottom:8px">■ OIS + 소프트웨어 보정 — 서보 없는 대안</div>
+물리적 서보 짐벌 없이 두 가지 메커니즘만 사용합니다.<br><br>
+
+<b>① 소프트웨어 보정 (SW, 85% 감소)</b><br>
+&nbsp;&nbsp;골반(bodyPos) 기준으로 투사 위치 계산 → 무릎 진동(±40cm)의 85% 제거.<br>
+&nbsp;&nbsp;잔류: ±40cm × 15% = <b>±6cm</b><br>
+&nbsp;&nbsp;별도 하드웨어 없음. 기존 IMU/포즈 추정 재활용.<br><br>
+
+<b>② OIS 보이스코일 (±7.5cm = ±2.5°@1.7m)</b><br>
+&nbsp;&nbsp;카메라 OIS 모듈과 동일 원리. 응답 1~5ms.<br>
+&nbsp;&nbsp;SW 잔류 ±6cm → OIS 범위(±7.5cm) <b>이내 → 거의 완전 흡수</b>.<br><br>
+
+<div style="border:1px solid rgba(103,242,167,0.3);border-radius:6px;padding:8px;margin:6px 0;font-size:10px">
+  무릎 진동: ±40 cm → SW 후 ±6 cm → OIS 후 <b>≈ 0~1 cm</b><br>
+  ※ 급격한 자세 변화 &gt;7.5cm 시 OIS 포화 → 일시 오차
+</div>
+
+<b>서보 대비 장단점:</b><br>
+&nbsp;&nbsp;✅ 두께 ~3mm (서보보다 훨씬 납작)<br>
+&nbsp;&nbsp;✅ 응답 1ms (서보 10~100ms보다 빠름)<br>
+&nbsp;&nbsp;❌ 보정 범위 ±7.5cm 한계 — 큰 자세변화 시 포화<br>
+&nbsp;&nbsp;❌ 피치 각도 능동 조절 불가`
   };
   const detail = by('stabDetail');
   if (detail) detail.innerHTML = STAB_DETAILS[mode] || '';
@@ -966,6 +999,7 @@ function bind() {
   by('stabOn').addEventListener('click', () => setStabMode('ideal'));
   by('stabOff').addEventListener('click', () => setStabMode('off'));
   if (by('stabHW')) by('stabHW').addEventListener('click', () => setStabMode('hw'));
+  if (by('stabOIS')) by('stabOIS').addEventListener('click', () => setStabMode('ois'));
   if (by('stabDetailToggle')) by('stabDetailToggle').addEventListener('click', () => {
     const d = by('stabDetail');
     const t = by('stabDetailToggle');
@@ -1466,7 +1500,35 @@ function updateProjection(dt) {
   floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
   floorPlane.rotation.x = -Math.PI / 2; // keep flat on ground
 
-  if (stabilize) {
+  if (stabMode === 'ois') {
+    // OIS + SW mode: no physical servo. bodyPos reference (SW) removes ~85% of knee oscillation.
+    // OIS voice-coil catches residual fast tremor, clamped to ±7.5cm (≈ ±2.5° at 1.7m).
+    const SW_EFF = 0.85;
+    const swTarget = new THREE.Vector3(
+      stableTarget.x + (rawFloorCenter.x - stableTarget.x) * (1 - SW_EFF),
+      0.012,
+      stableTarget.z + (rawFloorCenter.z - stableTarget.z) * (1 - SW_EFF)
+    );
+
+    if (!oisInitialized) {
+      qOisSettled.copy(swTarget);
+      oisInitialized = true;
+    }
+
+    // Settled position: slow macro-tracking (tau 0.5s), follows gradual posture shifts
+    qOisSettled.lerp(swTarget, 1 - Math.exp(-dt / 0.5));
+
+    // OIS fast correction: clamp to physical range (±7.5cm linear ≈ ±2.5° at 1.7m)
+    const OIS_LIMIT = 0.075;
+    const oisErr = swTarget.clone().sub(qOisSettled);
+    if (oisErr.length() > OIS_LIMIT) oisErr.setLength(OIS_LIMIT);
+
+    floorPlane.position.copy(qOisSettled).add(oisErr);
+    floorPlane.position.y = 0.012;
+    const wallAlpha = 1 - Math.exp(-dt / Math.max(0.03, tau));
+    qStabWall.lerp(baseWall, wallAlpha);
+    wallPlane.position.copy(qStabWall);
+  } else if (stabilize) {
     // Safety: if spring drifted far from target (e.g. huge dt spike), snap immediately.
     if (qStabFloor.distanceTo(angleTarget) > 3.0) {
       qStabFloor.copy(angleTarget);

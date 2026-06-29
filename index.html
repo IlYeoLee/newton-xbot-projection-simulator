@@ -101,10 +101,13 @@
 
             <section class="sec">
               <h2>04 투사 보정 수준 <span>Stabilization mode</span></h2>
-              <div class="grid3" style="margin-bottom:10px">
+              <div class="grid3" style="margin-bottom:6px">
                 <button id="stabOff" type="button">보정 없음</button>
                 <button id="stabOn" class="active" type="button">이상적 보정</button>
                 <button id="stabHW" type="button">실제 HW</button>
+              </div>
+              <div style="margin-bottom:10px">
+                <button id="stabOIS" type="button" style="width:100%;background:rgba(103,242,167,0.08);border-color:rgba(103,242,167,0.4);color:#67f2a7">OIS + 소프트웨어 보정 (서보 없음)</button>
               </div>
               <div id="stabDesc" class="mini" style="line-height:1.7;margin-bottom:6px">
                 <b>이상적 보정</b>: 센서 완벽·지연 없음. 서보 스프링이 몸 움직임만 흡수.
