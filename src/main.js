@@ -1408,14 +1408,24 @@ function updateProjection(dt) {
 
   const kneeH = Math.max(0.15, sensed.y);
 
-  // Floor center distance from TOE reference point.
-  // bodyPos = body root XZ (hip/ground). Hip-to-toe forward offset scales with height
-  // (~30% of modelHeight matches human proportions across 140–210cm range).
-  const BODY_TO_TOE = modelHeight * 0.30;
+  // "발을 닫는 기준": reference from the forward-most toe bone so the near edge is
+  // always floorStart ahead of wherever the front foot reaches during stride.
+  // Spring (K_s=22, critically damped) smooths ~2Hz running oscillation to ±2-3cm residual.
+  const ltTip = modelLoaded ? getFootFrontPoint('left') : null;
+  const rtTip = modelLoaded ? getFootFrontPoint('right') : null;
+  let fwdToe = null;
+  if (ltTip && rtTip) {
+    const ltFwd = (ltTip.x - bodyPos.x) * modelFwd.x + (ltTip.z - bodyPos.z) * modelFwd.z;
+    const rtFwd = (rtTip.x - bodyPos.x) * modelFwd.x + (rtTip.z - bodyPos.z) * modelFwd.z;
+    fwdToe = ltFwd > rtFwd ? ltTip : rtTip;
+  }
+  const toeRef = fwdToe
+    ? new THREE.Vector3(fwdToe.x, 0.012, fwdToe.z)
+    : new THREE.Vector3(bodyPos.x + modelFwd.x * modelHeight * 0.30, 0.012, bodyPos.z + modelFwd.z * modelHeight * 0.30);
   const stableTarget = new THREE.Vector3(
-    bodyPos.x + modelFwd.x * (BODY_TO_TOE + planeCenterDist),
+    toeRef.x + modelFwd.x * planeCenterDist,
     0.012,
-    bodyPos.z + modelFwd.z * (BODY_TO_TOE + planeCenterDist)
+    toeRef.z + modelFwd.z * planeCenterDist
   );
   lastIdealTarget.copy(stableTarget);
 
