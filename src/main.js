@@ -75,7 +75,7 @@ const eyeFiltered = new THREE.Vector3(0, 1.58, 0.15);
 const lookFiltered = new THREE.Vector3(0, 1.36, -2.2);
 let gaitPhase = 0;
 let lastFloorAngle = 0;
-const PITCH_REAL  = { idle: -15, running: -18, boxing: -12, fitness: -12, dance: -10 };
+const PITCH_REAL  = { idle: -40, running: -18, boxing: -12, fitness: -12, dance: -10 };
 const PITCH_TRAIN = { idle: -40, running: -45, boxing: -40, fitness: -40, dance: -35 };
 let exerciseMode = 'real'; // 'real' | 'train'
 let smoothedFloorAngle = 45;
@@ -790,7 +790,10 @@ function setPreset(p, apply = true) {
   if (modelRoot) fitModel();
   updateScenarioVisibility();
   updateViewAvailability();
-  if (apply) {
+  if (p === 'idle') {
+    if (mixer) { mixer.stopAllAction(); activeAction = null; }
+    if (modelRoot) modelRoot.traverse(obj => { if (obj.isSkinnedMesh && obj.skeleton) obj.skeleton.pose(); });
+  } else if (apply) {
     const first = preset.motions.find((m) => animRegistry.has(m));
     if (first) selectMotion(first);
     else log(`이 프리셋의 동작 FBX를 먼저 등록해야 합니다: ${preset.motions.join(', ')}`);
