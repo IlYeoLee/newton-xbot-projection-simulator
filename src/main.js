@@ -1020,7 +1020,7 @@ function setExerciseMode(mode) {
   const pitchMap = mode === 'train' ? PITCH_TRAIN : PITCH_REAL;
   const pitch = pitchMap[currentPreset] ?? (mode === 'train' ? -40 : -18);
   setNumberPair('pitch', pitch);
-  // autoFloorStart() is triggered by pitch bindPair callback
+  autoFloorStart();
 
   ['modeReal', 'modeTrain'].forEach(id => { const el = by(id); if (el) el.classList.remove('active'); });
   const activeBtn = by(mode === 'train' ? 'modeTrain' : 'modeReal');
