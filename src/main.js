@@ -1424,6 +1424,24 @@ function updateEyeFov() {
 function updateProjection(dt) {
   updateUserMovement(dt);
   if (modelRoot) modelRoot.position.copy(userPosition);
+
+  // Real running body oscillation: FBX root is static but an actual runner's COM moves.
+  // Without this, bodyPos is unrealistically stable (±2cm) making OIS look better than reality.
+  // Values from biomechanics: vertical ±5.5cm, forward-back ±4cm, lateral ±2.5cm at 2Hz cadence.
+  if (currentPreset === 'running' && activeAction && !paused && modelRoot) {
+    const clip = activeAction.getClip();
+    const ph = clip.duration > 0 ? (activeAction.time / clip.duration) * Math.PI * 2 : 0;
+    gaitPhase = ph;
+    // Vertical bounce: two peaks per stride cycle (at each foot plant)
+    modelRoot.position.y += Math.sin(ph * 2) * 0.055;
+    // Forward-back: COM lurches forward as trailing leg pushes off
+    modelRoot.position.x += cachedModelFwd.x * Math.cos(ph * 2) * 0.04;
+    modelRoot.position.z += cachedModelFwd.z * Math.cos(ph * 2) * 0.04;
+    // Lateral sway: once per stride (hips shift side to side)
+    modelRoot.position.x += cachedModelFwd.z * Math.sin(ph) * 0.025;
+    modelRoot.position.z -= cachedModelFwd.x * Math.sin(ph) * 0.025;
+  }
+
   if (modelRoot) modelRoot.updateMatrixWorld(true);
 
   const L = getWorld(leftKnee, 'L');
