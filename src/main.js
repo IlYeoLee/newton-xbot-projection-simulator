@@ -752,7 +752,9 @@ function setPreset(p, apply = true) {
   setNumberPair('height', preset.height);
   setNumberPair('tau', preset.tau);
   setNumberPair('fov', preset.fov);
-  setNumberPair('pitch', preset.pitch);
+  // Apply pitch from current exercise mode (real/train), not the preset hardcoded value
+  const pitchMap = exerciseMode === 'train' ? PITCH_TRAIN : PITCH_REAL;
+  setNumberPair('pitch', pitchMap[p] ?? preset.pitch);
   setNumberPair('floorW', preset.floorW);
   setNumberPair('floorD', preset.floorD);
   // floorZ is auto-calculated from height+pitch+fov — preset hardcoded value is ignored
@@ -997,6 +999,28 @@ function setStabMode(mode) {
 
 function setStab(v) { setStabMode(v ? 'ideal' : 'off'); }
 
+// Pitch presets per exercise mode
+const PITCH_REAL  = { idle: -15, running: -18, boxing: -12, fitness: -12, dance: -10 };
+const PITCH_TRAIN = { idle: -40, running: -45, boxing: -40, fitness: -40, dance: -35 };
+let exerciseMode = 'real'; // 'real' | 'train'
+
+function setExerciseMode(mode) {
+  exerciseMode = mode;
+  const pitchMap = mode === 'train' ? PITCH_TRAIN : PITCH_REAL;
+  const pitch = pitchMap[currentPreset] ?? (mode === 'train' ? -40 : -18);
+  setNumberPair('pitch', pitch);
+  // autoFloorStart() is triggered by pitch bindPair callback
+
+  ['modeReal', 'modeTrain'].forEach(id => { const el = by(id); if (el) el.classList.remove('active'); });
+  const activeBtn = by(mode === 'train' ? 'modeTrain' : 'modeReal');
+  if (activeBtn) activeBtn.classList.add('active');
+
+  const desc = by('modeDesc');
+  if (desc) desc.textContent = mode === 'train'
+    ? '훈련: 발 내려보기(-45°) 기준 — 투사가 발 바로 앞 ~20cm부터 시작. 발 위치·보폭 느끼며 연습.'
+    : '실전: 자연 시선(-18°) 기준 — 투사가 발 앞 ~110cm부터 시작. 빠르게 달려도 고개 숙임 없이 보임.';
+}
+
 // Auto-calculate floorStart so the near edge aligns with the natural gaze floor-hit point.
 // Formula: floorStart = eyeH / tan(|pitch - fov/2|) - BODY_TO_TOE
 // This ensures the projection begins exactly where the lower FOV edge meets the floor.
@@ -1031,6 +1055,8 @@ function bind() {
   by('stabOff').addEventListener('click', () => setStabMode('off'));
   if (by('stabHW')) by('stabHW').addEventListener('click', () => setStabMode('hw'));
   if (by('stabOIS')) by('stabOIS').addEventListener('click', () => setStabMode('ois'));
+  if (by('modeReal')) by('modeReal').addEventListener('click', () => setExerciseMode('real'));
+  if (by('modeTrain')) by('modeTrain').addEventListener('click', () => setExerciseMode('train'));
   if (by('stabDetailToggle')) by('stabDetailToggle').addEventListener('click', () => {
     const d = by('stabDetail');
     const t = by('stabDetailToggle');
