@@ -58,7 +58,8 @@ let tau = 0.18;
 let kneeSide = 'right';
 let modelLoaded = false;
 let qStabFloor = new THREE.Vector3(0, 0.012, -1.15);
-let lastIdealTarget = new THREE.Vector3(0, 0.012, -1.15); // latest computed ideal floor center
+let lastIdealTarget = new THREE.Vector3(0, 0.012, -1.15);
+let stabMode = 'ideal'; // 'off' | 'ideal' | 'hw'
 let qStabWall = new THREE.Vector3(0, 1.18, -2.25);
 let previousPreset = currentPreset;
 let rawPhase = 0;
@@ -811,9 +812,6 @@ function setRealismAll(on) {
   if (by('realismOn')) by('realismOn').classList.toggle('active', on);
   if (by('realismOff')) by('realismOff').classList.toggle('active', !on);
 }
-
-// stabMode: 'off' | 'ideal' | 'hw'
-let stabMode = 'ideal';
 
 function setStabMode(mode) {
   const wasOff = !stabilize;
