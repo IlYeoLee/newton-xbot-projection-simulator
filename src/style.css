@@ -88,7 +88,9 @@ button.disabled, button:disabled { opacity: 0.42; cursor: not-allowed; }
 .scroll { height: 100%; overflow: auto; padding: 14px; }
 .scroll::-webkit-scrollbar { width: 7px; }
 .scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 999px; }
-.right { width: 340px; max-width: 34vw; display: flex; flex-direction: column; gap: 10px; }
+.right { width: 340px; max-width: 34vw; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.right::-webkit-scrollbar { width: 7px; }
+.right::-webkit-scrollbar-thumb { background: #333; border-radius: 999px; }
 .card { border-radius: 8px; padding: 14px; }
 .card h3 {
   margin: 0 0 8px;
