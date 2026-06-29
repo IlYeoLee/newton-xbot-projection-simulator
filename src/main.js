@@ -1019,9 +1019,17 @@ function bind() {
   window.addEventListener('keyup', (e) => moveKeys.delete(e.code));
   const autoOptimizeBtn = by('autoOptimizeBtn');
   if (autoOptimizeBtn) autoOptimizeBtn.addEventListener('click', () => {
-    setNumberPair('floorZ', 20);
-    setNumberPair('floorD', 160);
-    updateSurfaceFromInputs();
+    // Compute optimal pitch to center the projection in natural gaze
+    const eyeH = modelLoaded
+      ? (getWorld(eyeBone, 'E').y + modelHeight * 0.07)
+      : modelHeight * 0.93;
+    const fZ = Number(by('floorZ').value || 20) / 100;
+    const fD = Number(by('floorD').value || 160) / 100;
+    const centerDist = modelHeight * 0.35 + fZ + fD / 2;
+    const optPitch = Math.round(Math.max(-55, Math.min(-10,
+      -THREE.MathUtils.radToDeg(Math.atan2(eyeH, centerDist))
+    )));
+    setNumberPair('pitch', optPitch);
     updatePersonaAssessment();
   });
 
@@ -1644,11 +1652,13 @@ function updateHWPanel(dt, kneeModule, stabPos, planeCenterDist, floorStart, flo
 function updatePersonaAssessment() {
   const floorZ = Number(by('floorZ').value || 20);
   const floorD = Number(by('floorD').value || 160);
-  const floorStart = floorZ;
-  const floorEnd = floorZ + floorD;
-  const coversCore = floorStart <= 20 && floorEnd >= 150;
-  const coversAux = floorStart <= 20 && floorEnd >= 180;
-  const coversAngle = lastFloorAngle >= 45 && lastFloorAngle <= 60;
+  const floorStart = floorZ / 100; // metres
+  const floorDepth = floorD / 100;
+  const pitchDeg = Number(by('pitch').value || -18);
+  const fovDeg = Number(by('fov').value || 50);
+  const pitchRad = THREE.MathUtils.degToRad(pitchDeg);
+  const fovVRad = THREE.MathUtils.degToRad(fovDeg);
+
   const hasMotion = Boolean(activeAction);
   const hasModel = Boolean(modelLoaded);
   const running = currentPreset === 'running';
@@ -1656,59 +1666,81 @@ function updatePersonaAssessment() {
   const motionText = currentMotion ? `${currentMotion} 적용됨` : '동작 미적용';
   by('personaState').textContent = `${modelText} · ${motionText} · ${stabilize ? '안정화 ON' : '안정화 OFF'}`;
 
-  // Compute optimal values for auto-optimize
-  const optStart = 20;
-  const optDepth = 160; // covers 20~180cm
-  const needsOptimize = !coversCore || !coversAux;
-  const optHint = `바닥 시작 거리 → ${optStart}cm, 세로 길이 → ${optDepth}cm 으로 설정하면 20~180cm 전체 커버.`;
+  // Eye height (with offset for bone position vs actual eye)
+  const eyeH = hasModel
+    ? (getWorld(eyeBone, 'E').y + modelHeight * 0.07)
+    : modelHeight * 0.93;
 
-  let verdict = '무리 없음';
-  let verdictClass = 'ok';
-  let reason = '발 앞 20~180cm 기본 범위와 무릎 사출각 45°~60° 권장 구간을 안정적으로 커버합니다.';
+  // BODY_TO_TOE matches updateProjection (max stride toe extent)
+  const BODY_TO_TOE = modelHeight * 0.35;
+
+  // Floor projection extents in world space ahead of body
+  const nearDist = BODY_TO_TOE + floorStart;
+  const farDist  = BODY_TO_TOE + floorStart + floorDepth;
+  const centerDist = (nearDist + farDist) / 2;
+
+  // Natural gaze: pitch slider is the center gaze angle
+  // FOV lower edge = most downward ray the eye can see without moving head
+  const lowerEdgeAngle = pitchRad - fovVRad / 2; // e.g. -18° - 25° = -43°
+  // Distance on floor where lower FOV edge meets ground
+  const floorVisibleFromDist = eyeH / Math.tan(-lowerEdgeAngle);
+  // Visible floor range within natural gaze
+  const visNear = Math.max(nearDist, floorVisibleFromDist);
+  const visFar  = farDist;
+  const covFrac = visFar > visNear
+    ? Math.min(1, (visFar - visNear) / (farDist - nearDist))
+    : 0;
+  const covPct = covFrac * 100;
+
+  // Angle to look at projection center, and how much extra tilt is needed
+  const angleToCenter = -THREE.MathUtils.radToDeg(Math.atan2(eyeH, centerDist));
+  const extraTilt = Math.max(0, Math.abs(angleToCenter) - Math.abs(lowerEdgeAngle * 180 / Math.PI));
+
+  // Update gaze metrics display
+  const covEl = by('gazeCoverage');
+  if (covEl) { covEl.textContent = `${covPct.toFixed(0)}%`; covEl.className = covPct >= 60 ? 'ok mono' : covPct >= 30 ? 'warn mono' : 'bad mono'; }
+  const extraEl = by('extraGazeAngle');
+  if (extraEl) { extraEl.textContent = extraTilt < 1 ? '없음 (자연 시선 내)' : `+${extraTilt.toFixed(1)}° 더 숙여야 보임`; extraEl.className = extraTilt < 1 ? 'ok mono' : extraTilt < 10 ? 'warn mono' : 'bad mono'; }
+  const centerEl = by('projCenterAngle');
+  if (centerEl) centerEl.textContent = `${angleToCenter.toFixed(1)}° (자연 시선 ${pitchDeg.toFixed(0)}°)`;
+  by('projAngle').textContent = `${lastFloorAngle.toFixed(1)}°`;
+  by('projAngle').className = 'mono';
+
+  // Verdict based on gaze coverage
+  let verdict, verdictClass, reason;
   if (!hasModel) {
-    verdict = '모델 필요';
-    verdictClass = 'warn';
+    verdict = '모델 필요'; verdictClass = 'warn';
     reason = 'X Bot 모델이 아직 로드되지 않았습니다.';
-  } else if (!coversCore) {
-    verdict = '조정 필요';
-    verdictClass = 'warn';
-    reason = `핵심 시야 20~150cm 미충족 (현재: 발 앞 ${floorStart.toFixed(0)}cm ~ ${floorEnd.toFixed(0)}cm). 아래 버튼으로 자동 최적화하거나, 바닥 시작 거리를 ${optStart}cm, 세로 길이를 ${optDepth}cm으로 조정하세요.`;
-  } else if (!coversAux) {
-    verdict = '보조 범위 부족';
-    verdictClass = 'warn';
-    reason = `핵심(~150cm)은 OK지만 150~180cm 보조 범위가 짧습니다 (현재 끝: ${floorEnd.toFixed(0)}cm). 세로 길이를 ${optDepth}cm로 늘리면 됩니다.`;
-  } else if (!coversAngle) {
-    verdict = '서보 보정 중';
-    verdictClass = 'warn';
-    reason = `무릎 사출각 ${lastFloorAngle.toFixed(1)}° — 권장 45~60° 범위 밖. 키·바닥 시작 거리 조합을 확인하세요.`;
-  } else if (!stabilize) {
-    verdict = '사용 가능';
-    verdictClass = 'warn';
-    reason = '범위는 맞지만 안정화가 꺼져 있어 움직임이 더 직접적으로 보입니다.';
-  } else if (!hasMotion) {
-    verdict = '기본 준비 완료';
-    verdictClass = 'ok';
-    reason = '기본 범위와 안정화가 맞아 있어 바로 동작 확인이 가능합니다.';
+  } else if (covPct >= 60) {
+    verdict = '시야 양호'; verdictClass = 'ok';
+    reason = `자연 시선 안에 투사 영역 ${covPct.toFixed(0)}% 가 들어옵니다. 고개를 과하게 숙이지 않아도 정보 확인 가능합니다.`;
+  } else if (covPct >= 20) {
+    verdict = '시선 조정 필요'; verdictClass = 'warn';
+    reason = `현재 자연 시선 커버율 ${covPct.toFixed(0)}% — 투사 중심을 보려면 고개를 ${extraTilt.toFixed(1)}° 더 숙여야 합니다. 피치 각도를 키우거나 바닥 시작 거리를 늘리면 개선됩니다.`;
+  } else {
+    verdict = '시야 밖'; verdictClass = 'bad';
+    reason = `현재 설정에서 투사 영역이 자연 시선(${pitchDeg}°±${(fovDeg/2).toFixed(0)}°) 바깥에 있습니다. 머리 IMU 연동 짐벌 조향이 근본 해법입니다.`;
   }
+  if (!stabilize && hasModel) { verdict = '안정화 꺼짐'; verdictClass = 'warn'; reason = '안정화가 꺼져 있어 투사 위치가 걸음에 따라 크게 흔들립니다.'; }
 
   by('personaVerdict').textContent = verdict;
   by('personaVerdict').className = verdictClass;
   by('personaReason').textContent = reason;
 
-  // Show/hide auto-optimize button
+  // Auto-optimize: set pitch to bring projection center into natural gaze
+  const needsOptimize = covPct < 60 && hasModel;
+  const optPitch = Math.round(Math.max(-55, Math.min(-10, angleToCenter)));
+  const optHint = `피치를 ${optPitch}° 로 조정하면 투사 중심이 자연 시선 내에 들어옵니다.`;
   const optRow = by('autoOptimizeRow');
-  if (optRow) optRow.style.display = needsOptimize && hasModel ? '' : 'none';
+  if (optRow) optRow.style.display = needsOptimize ? '' : 'none';
   const optHintEl = by('autoOptimizeHint');
   if (optHintEl) optHintEl.textContent = optHint;
-  by('personaNote').textContent = running
-    ? '러닝에서는 전방 20~180cm를 기본 커버값으로 두고, 1인칭 흔들림은 저역 통과로 줄입니다.'
-    : '정지 동작에서도 시야 범위와 사출각을 자연스럽게 보이도록 유지합니다.';
 
-  by('coreSight').textContent = '20~150cm';
-  by('auxSight').textContent = '150~180cm';
-  by('projAngle').textContent = `${lastFloorAngle.toFixed(1)}°`;
-  by('projAngle').className = coversAngle ? 'ok' : 'warn';
-  by('defaultSpan').textContent = `발 앞 ${floorStart.toFixed(0)}cm ~ ${floorEnd.toFixed(0)}cm`;
+  by('personaNote').textContent = running
+    ? `러닝 중 자연 시선(${pitchDeg}°)에서 전방 ${(floorVisibleFromDist*100).toFixed(0)}cm 이상 바닥이 시야에 들어옵니다. 머리 IMU 연동 시 시선 방향 자동 추적으로 커버율 100% 달성 가능합니다.`
+    : '머리 IMU + 짐벌 조향 시 고개 방향에 따라 투사가 자동으로 따라옵니다.';
+
+  by('floorM').textContent = `시작 ${(floorStart*100).toFixed(0)} / 끝 ${((floorStart+floorDepth)*100).toFixed(0)}cm`;
 }
 
 function updateViewAvailability() {

@@ -240,15 +240,19 @@
             <div class="metric"><span>시선 메모</span><span id="personaNote">1인칭은 과한 흔들림 없이 전방을 유지합니다.</span></div>
             </div>
           </div>
-          <div class="panel card" id="coverageCard"><h3><span>기본 범위</span><button class="card-toggle" type="button" data-card="coverageCard">접기</button></h3>
+          <div class="panel card" id="coverageCard"><h3><span>시야 최적화</span><button class="card-toggle" type="button" data-card="coverageCard">접기</button></h3>
             <div class="card-body">
-            <div class="metric"><span>핵심 시야 범위</span><span id="coreSight" class="mono">20~150cm</span></div>
-            <div class="metric"><span>보조 시야 범위</span><span id="auxSight" class="mono">150~180cm</span></div>
+            <div class="metric"><span>자연 시선 커버율</span><span id="gazeCoverage" class="mono">-</span></div>
+            <div class="metric"><span>추가 고개 숙임</span><span id="extraGazeAngle" class="mono">-</span></div>
+            <div class="metric"><span>투사 중심 시선각</span><span id="projCenterAngle" class="mono">-</span></div>
             <div class="metric"><span>무릎 사출각</span><span id="projAngle" class="ok">-</span></div>
-            <div class="metric"><span>기본 커버</span><span id="defaultSpan" class="mono">발 앞 20cm ~ 180cm</span></div>
             <div class="metric"><span>선택 무릎</span><span id="kneeSideM" class="ok">오른쪽 무릎 1개</span></div>
             <div class="metric"><span>안정화</span><span id="stabState" class="ok">ON</span></div>
             <div class="metric"><span>바닥 시작/끝</span><span id="floorM" class="mono">-</span></div>
+            <div class="metric" style="border-top:1px solid rgba(255,255,255,0.12);margin-top:6px;padding-top:8px">
+              <span style="color:#888;font-size:10px">스텝 동기 스트로브</span>
+              <span id="headImuNote" class="mono" style="font-size:10px;color:#67f2a7">착지 타이밍에만 점등 → 자연 시선 일치</span>
+            </div>
             </div>
           </div>
 
