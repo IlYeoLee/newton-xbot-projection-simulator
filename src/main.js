@@ -321,6 +321,7 @@ function makeProjectionSurfaces() {
   fovGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12 * 2 * 3), 3));
   eyeFovLines = new THREE.LineSegments(fovGeom, new THREE.LineBasicMaterial({ color: 0x22eeff, transparent: true, opacity: 0.55 }));
   eyeFovLines.visible = false;
+  eyeFovLines.frustumCulled = false; // bounding box of line geometry is unreliable — never cull
   scene.add(eyeFovLines);
 }
 
@@ -1303,19 +1304,18 @@ function setBeam(mesh, apex, corners) {
 
 function updateEyeFov() {
   if (!eyeFovLines) return;
-  // Hide in 1st-person view (camera is inside the head — near clip eats the lines)
   const inEyeView = currentView === 'eye';
-  eyeFovLines.visible = eyeFovVisible && !inEyeView;
   // Keep top button active state even in eye-view (cone is ON, just hidden in this view)
   const topBtn = by('eyeFovBtnTop');
   if (topBtn) topBtn.classList.toggle('active', eyeFovVisible);
-  if (!eyeFovLines.visible) return;
 
-  // Guard: cachedModelFwd must be a valid non-zero vector
-  if (cachedModelFwd.lengthSq() < 0.01) return;
+  // If OFF or in eye view, hide and bail
+  if (!eyeFovVisible || inEyeView) { eyeFovLines.visible = false; return; }
 
+  // Guard: need valid forward vector and head bone before touching geometry
+  if (cachedModelFwd.lengthSq() < 0.01) { eyeFovLines.visible = false; return; }
   const headPos = getWorld(eyeBone, 'E');
-  if (!headPos || isNaN(headPos.x)) return;
+  if (!headPos || isNaN(headPos.x)) { eyeFovLines.visible = false; return; }
   // mixamorigHead bone is at chin/base-of-skull level; eyes are ~7% of modelHeight above it
   const eye = headPos.clone().add(new THREE.Vector3(0, modelHeight * 0.07, 0));
   const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -15));
@@ -1364,6 +1364,8 @@ function updateEyeFov() {
   // 4 near edges (inner frame at 0.8m)
   for (let c = 0; c < 4; c++) { s(near[c]); s(near[(c + 1) % 4]); }
   eyeFovLines.geometry.attributes.position.needsUpdate = true;
+  // Set visible only after geometry is confirmed written this frame
+  eyeFovLines.visible = true;
 }
 
 function updateProjection(dt) {
