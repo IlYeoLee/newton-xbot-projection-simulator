@@ -749,6 +749,8 @@ function setPreset(p, apply = true) {
   previousPreset = currentPreset;
   currentPreset = p;
   document.querySelectorAll('.preset button').forEach((b) => b.classList.toggle('active', b.dataset.preset === p));
+  const modeRow = by('runningModeRow');
+  if (modeRow) modeRow.style.display = p === 'running' ? '' : 'none';
   const preset = PRESETS[p];
   by('personaState').textContent = `${preset.label} · 프리셋 적용`;
   setNumberPair('yaw', preset.yaw);
