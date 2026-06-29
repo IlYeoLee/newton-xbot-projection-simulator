@@ -1019,17 +1019,28 @@ function bind() {
   window.addEventListener('keyup', (e) => moveKeys.delete(e.code));
   const autoOptimizeBtn = by('autoOptimizeBtn');
   if (autoOptimizeBtn) autoOptimizeBtn.addEventListener('click', () => {
-    // Compute optimal pitch to center the projection in natural gaze
+    // Set floorStart/floorD so the projection covers the eye FOV floor footprint.
+    // The FOV lower edge (most downward ray) is where the projection must START —
+    // anything closer is below the natural gaze and invisible without looking straight down.
     const eyeH = modelLoaded
       ? (getWorld(eyeBone, 'E').y + modelHeight * 0.07)
       : modelHeight * 0.93;
-    const fZ = Number(by('floorZ').value || 20) / 100;
-    const fD = Number(by('floorD').value || 160) / 100;
-    const centerDist = modelHeight * 0.35 + fZ + fD / 2;
-    const optPitch = Math.round(Math.max(-55, Math.min(-10,
-      -THREE.MathUtils.radToDeg(Math.atan2(eyeH, centerDist))
-    )));
-    setNumberPair('pitch', optPitch);
+    const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -18));
+    const fovVRad = THREE.MathUtils.degToRad(Number(by('fov').value || 50));
+    const BODY_TO_TOE = modelHeight * 0.35;
+
+    // Distance from bodyPos where bottom FOV ray meets the floor
+    const lowerAngleRad = pitchRad - fovVRad / 2;
+    const floorNearM = eyeH / Math.tan(-lowerAngleRad); // metres from bodyPos
+
+    // Slider values are relative to BODY_TO_TOE reference point
+    const newStart = Math.round(Math.max(20, (floorNearM - BODY_TO_TOE) * 100) / 5) * 5;
+    // Upper FOV ray doesn't hit floor → depth is unbounded; cap at slider max (3m).
+    const newDepth = 300;
+
+    setNumberPair('floorZ', Math.min(300, newStart));
+    setNumberPair('floorD', newDepth);
+    updateSurfaceFromInputs();
     updatePersonaAssessment();
   });
 
