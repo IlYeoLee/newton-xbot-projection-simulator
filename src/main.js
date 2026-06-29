@@ -75,6 +75,9 @@ const eyeFiltered = new THREE.Vector3(0, 1.58, 0.15);
 const lookFiltered = new THREE.Vector3(0, 1.36, -2.2);
 let gaitPhase = 0;
 let lastFloorAngle = 0;
+const PITCH_REAL  = { idle: -15, running: -18, boxing: -12, fitness: -12, dance: -10 };
+const PITCH_TRAIN = { idle: -40, running: -45, boxing: -40, fitness: -40, dance: -35 };
+let exerciseMode = 'real'; // 'real' | 'train'
 let smoothedFloorAngle = 45;
 let lastAssessmentTime = 0;
 const stabVelocity = new THREE.Vector3(0, 0, 0);
@@ -1011,10 +1014,6 @@ function setStabMode(mode) {
 
 function setStab(v) { setStabMode(v ? 'ideal' : 'off'); }
 
-// Pitch presets per exercise mode
-const PITCH_REAL  = { idle: -15, running: -18, boxing: -12, fitness: -12, dance: -10 };
-const PITCH_TRAIN = { idle: -40, running: -45, boxing: -40, fitness: -40, dance: -35 };
-let exerciseMode = 'real'; // 'real' | 'train'
 
 function setExerciseMode(mode) {
   exerciseMode = mode;

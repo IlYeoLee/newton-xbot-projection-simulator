@@ -9,8 +9,8 @@
         location.replace('./dist/index.html');
       }
     </script>
-    <script type="module" crossorigin src="./assets/index-C4izNMAr.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Dqy9Cpb_.css">
+    <script type="module" crossorigin src="./assets/index.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index.css">
   </head>
   <body>
     <div id="view"></div>
@@ -27,6 +27,7 @@
           <button id="toggleLeft" type="button">설정 접기</button>
           <button id="toggleRight" type="button">상태 접기</button>
           <button id="resetSettings" type="button">설정 초기화</button>
+          <button id="eyeFovBtnTop" type="button">시야콘</button>
           <button id="view-orbit" class="active" data-view="orbit">자유 3D</button>
           <button id="view-side" data-view="side">측면</button>
           <button id="view-top" data-view="top">머리 위</button>
@@ -102,10 +103,15 @@
 
             <section class="sec">
               <h2>04 투사 보정 수준 <span>Stabilization mode</span></h2>
-              <div class="grid3" style="margin-bottom:10px">
+              <div style="font-size:10px;color:#888;margin-bottom:4px">▼ 서보 모터 사용</div>
+              <div class="grid3" style="margin-bottom:12px">
                 <button id="stabOff" type="button">보정 없음</button>
-                <button id="stabOn" class="active" type="button">이상적 보정</button>
-                <button id="stabHW" type="button">실제 HW</button>
+                <button id="stabOn" class="active" type="button">서보 (이상적)</button>
+                <button id="stabHW" type="button">서보 (실제 HW)</button>
+              </div>
+              <div style="font-size:10px;color:#67f2a7;margin-bottom:4px">▼ 서보 없는 대안</div>
+              <div style="margin-bottom:10px">
+                <button id="stabOIS" type="button" style="width:100%">OIS + 소프트웨어</button>
               </div>
               <div id="stabDesc" class="mini" style="line-height:1.7;margin-bottom:6px">
                 <b>이상적 보정</b>: 센서 완벽·지연 없음. 서보 스프링이 몸 움직임만 흡수.
@@ -129,7 +135,16 @@
             </section>
 
             <section class="sec">
-              <h2>05 투사 면 수치 <span>Surface tuning</span></h2>
+              <h2>05 운동 모드 <span>Exercise mode</span></h2>
+              <div class="grid2" style="margin-bottom:6px">
+                <button id="modeReal" class="active" type="button">실전 모드</button>
+                <button id="modeTrain" type="button">훈련 모드</button>
+              </div>
+              <p class="mini" id="modeDesc">실전: 자연 시선(-18°) 기준 — 투사가 발 앞 ~110cm부터 시작. 빠르게 달려도 고개 숙임 없이 보임.</p>
+            </section>
+
+            <section class="sec">
+              <h2>06 투사 면 수치 <span>Surface tuning</span></h2>
               <div class="field"><div class="row"><label>바닥 UI 가로폭</label><span class="value" id="floorWVal">95 cm</span></div><div class="pair"><input id="floorW" type="range" min="40" max="300" step="5" value="95"><input id="floorWN" type="number" min="40" max="300" step="5" value="95"></div></div>
               <div class="field"><div class="row"><label>바닥 UI 세로길이</label><span class="value" id="floorDVal">160 cm</span></div><div class="pair"><input id="floorD" type="range" min="60" max="300" step="5" value="160"><input id="floorDN" type="number" min="60" max="300" step="5" value="160"></div></div>
               <div class="field"><div class="row"><label>바닥 UI 시작 거리</label><span class="value" id="floorZVal">20 cm</span></div><div class="pair"><input id="floorZ" type="range" min="20" max="300" step="5" value="20"><input id="floorZN" type="number" min="20" max="300" step="5" value="20"></div></div>
@@ -233,19 +248,27 @@
             <div class="card-body">
             <div class="metric"><span>판단</span><span id="personaVerdict" class="ok">무리 없음</span></div>
             <div class="metric"><span>이유</span><span id="personaReason">발 앞 20~180cm가 기본 범위에 들어옵니다.</span></div>
+            <div id="autoOptimizeRow" style="display:none;margin:8px 0">
+              <button id="autoOptimizeBtn" type="button" style="width:100%;background:rgba(255,209,102,0.15);border-color:rgba(255,209,102,0.5);color:#ffd166">시야콘 맞춤 적용</button>
+              <div id="autoOptimizeHint" class="mini" style="margin-top:5px;color:#ffd166"></div>
+            </div>
             <div class="metric"><span>현재 상태</span><span id="personaState" class="mono">모델 미로드 · 동작 미적용</span></div>
             <div class="metric"><span>시선 메모</span><span id="personaNote">1인칭은 과한 흔들림 없이 전방을 유지합니다.</span></div>
             </div>
           </div>
-          <div class="panel card" id="coverageCard"><h3><span>기본 범위</span><button class="card-toggle" type="button" data-card="coverageCard">접기</button></h3>
+          <div class="panel card" id="coverageCard"><h3><span>시야 최적화</span><button class="card-toggle" type="button" data-card="coverageCard">접기</button></h3>
             <div class="card-body">
-            <div class="metric"><span>핵심 시야 범위</span><span id="coreSight" class="mono">20~150cm</span></div>
-            <div class="metric"><span>보조 시야 범위</span><span id="auxSight" class="mono">150~180cm</span></div>
+            <div class="metric"><span>자연 시선 커버율</span><span id="gazeCoverage" class="mono">-</span></div>
+            <div class="metric"><span>추가 고개 숙임</span><span id="extraGazeAngle" class="mono">-</span></div>
+            <div class="metric"><span>투사 중심 시선각</span><span id="projCenterAngle" class="mono">-</span></div>
             <div class="metric"><span>무릎 사출각</span><span id="projAngle" class="ok">-</span></div>
-            <div class="metric"><span>기본 커버</span><span id="defaultSpan" class="mono">발 앞 20cm ~ 180cm</span></div>
             <div class="metric"><span>선택 무릎</span><span id="kneeSideM" class="ok">오른쪽 무릎 1개</span></div>
             <div class="metric"><span>안정화</span><span id="stabState" class="ok">ON</span></div>
             <div class="metric"><span>바닥 시작/끝</span><span id="floorM" class="mono">-</span></div>
+            <div class="metric" style="border-top:1px solid rgba(255,255,255,0.12);margin-top:6px;padding-top:8px">
+              <span style="color:#888;font-size:10px">스텝 동기 스트로브</span>
+              <span id="headImuNote" class="mono" style="font-size:10px;color:#67f2a7">착지 타이밍에만 점등 → 자연 시선 일치</span>
+            </div>
             </div>
           </div>
 
