@@ -42,7 +42,7 @@ let ground;
 let wall;
 let grid;
 let eyeFovLines = null;
-let eyeFovVisible = false;
+let eyeFovVisible = true;
 let wallGrid;
 let currentPreset = 'running';
 let currentMotion = '';
@@ -521,6 +521,10 @@ function updateBeamToggleLabels() {
   by('wallBeamToggle').textContent = wallBeamVisible ? '벽면 빔 ON' : '벽면 빔 OFF';
   by('floorBeamToggle').classList.toggle('active', floorBeamVisible);
   by('wallBeamToggle').classList.toggle('active', wallBeamVisible);
+  const panelBtn = by('eyeFovBtn');
+  const topBtn = by('eyeFovBtnTop');
+  if (panelBtn) { panelBtn.textContent = eyeFovVisible ? '시야콘 ON' : '시야콘 OFF'; panelBtn.classList.toggle('active', eyeFovVisible); }
+  if (topBtn) topBtn.classList.toggle('active', eyeFovVisible);
 }
 
 function setActiveSurface(surface) {
