@@ -1453,12 +1453,6 @@ function updateProjection(dt) {
     // Lateral sway ±2.5cm at 1Hz
     modelRoot.position.x += cachedModelFwd.z * Math.sin(ph) * 0.025;
     modelRoot.position.z -= cachedModelFwd.x * Math.sin(ph) * 0.025;
-    // Foot-strike impact shock: sharp ±12cm spike at each landing (10Hz decay).
-    // This is what saturates OIS in real running — smooth sine can't replicate it.
-    const impactPhase = ((ph * 2) % (Math.PI * 2)); // twice per stride
-    const impactShock = impactPhase < 0.6 ? Math.exp(-impactPhase * 6) * 0.12 : 0;
-    modelRoot.position.x += cachedModelFwd.x * impactShock;
-    modelRoot.position.z += cachedModelFwd.z * impactShock;
   }
 
   if (modelRoot) modelRoot.updateMatrixWorld(true);
