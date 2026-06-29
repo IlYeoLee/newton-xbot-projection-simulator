@@ -752,7 +752,19 @@ function setPreset(p, apply = true) {
   setNumberPair('height', preset.height);
   setNumberPair('tau', preset.tau);
   setNumberPair('fov', preset.fov);
-  // Apply pitch from current exercise mode (real/train), not the preset hardcoded value
+  // 복싱·홈트·댄스 → 훈련 모드 자동 전환 (스텝/동작 따라하기 필요)
+  // 달리기·제자리 → 실전 모드 유지
+  const autoMode = ['boxing', 'fitness', 'dance'].includes(p) ? 'train' : 'real';
+  if (autoMode !== exerciseMode) {
+    exerciseMode = autoMode;
+    ['modeReal', 'modeTrain'].forEach(id => { const el = by(id); if (el) el.classList.remove('active'); });
+    const activeBtn = by(autoMode === 'train' ? 'modeTrain' : 'modeReal');
+    if (activeBtn) activeBtn.classList.add('active');
+    const desc = by('modeDesc');
+    if (desc) desc.textContent = autoMode === 'train'
+      ? '훈련: 발 내려보기(-45°) 기준 — 투사가 발 바로 앞 ~20cm부터 시작. 발 위치·동작 따라하며 연습.'
+      : '실전: 자연 시선(-18°) 기준 — 투사가 발 앞 ~110cm부터 시작. 빠르게 달려도 고개 숙임 없이 보임.';
+  }
   const pitchMap = exerciseMode === 'train' ? PITCH_TRAIN : PITCH_REAL;
   setNumberPair('pitch', pitchMap[p] ?? preset.pitch);
   setNumberPair('floorW', preset.floorW);
