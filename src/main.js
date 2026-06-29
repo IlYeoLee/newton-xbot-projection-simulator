@@ -853,6 +853,20 @@ function setStabMode(mode) {
   const activeId = mode === 'off' ? 'stabOff' : mode === 'hw' ? 'stabHW' : mode === 'ois' ? 'stabOIS' : 'stabOn';
   const activeEl = by(activeId); if (activeEl) activeEl.classList.add('active');
 
+  // OIS button: green styling only when active
+  const oisBtn = by('stabOIS');
+  if (oisBtn) {
+    if (mode === 'ois') {
+      oisBtn.style.background = 'rgba(103,242,167,0.2)';
+      oisBtn.style.borderColor = 'rgba(103,242,167,0.7)';
+      oisBtn.style.color = '#67f2a7';
+    } else {
+      oisBtn.style.background = '';
+      oisBtn.style.borderColor = '';
+      oisBtn.style.color = '';
+    }
+  }
+
   // Status
   const stateEl = by('stabState');
   if (stateEl) {
@@ -1426,20 +1440,25 @@ function updateProjection(dt) {
   if (modelRoot) modelRoot.position.copy(userPosition);
 
   // Real running body oscillation: FBX root is static but an actual runner's COM moves.
-  // Without this, bodyPos is unrealistically stable (±2cm) making OIS look better than reality.
-  // Values from biomechanics: vertical ±5.5cm, forward-back ±4cm, lateral ±2.5cm at 2Hz cadence.
+  // Without this, bodyPos is unrealistically stable making OIS look better than reality.
   if (currentPreset === 'running' && activeAction && !paused && modelRoot) {
     const clip = activeAction.getClip();
     const ph = clip.duration > 0 ? (activeAction.time / clip.duration) * Math.PI * 2 : 0;
     gaitPhase = ph;
-    // Vertical bounce: two peaks per stride cycle (at each foot plant)
+    // Vertical bounce ±5.5cm at 2Hz
     modelRoot.position.y += Math.sin(ph * 2) * 0.055;
-    // Forward-back: COM lurches forward as trailing leg pushes off
+    // Forward-back COM shift ±4cm at 2Hz
     modelRoot.position.x += cachedModelFwd.x * Math.cos(ph * 2) * 0.04;
     modelRoot.position.z += cachedModelFwd.z * Math.cos(ph * 2) * 0.04;
-    // Lateral sway: once per stride (hips shift side to side)
+    // Lateral sway ±2.5cm at 1Hz
     modelRoot.position.x += cachedModelFwd.z * Math.sin(ph) * 0.025;
     modelRoot.position.z -= cachedModelFwd.x * Math.sin(ph) * 0.025;
+    // Foot-strike impact shock: sharp ±12cm spike at each landing (10Hz decay).
+    // This is what saturates OIS in real running — smooth sine can't replicate it.
+    const impactPhase = ((ph * 2) % (Math.PI * 2)); // twice per stride
+    const impactShock = impactPhase < 0.6 ? Math.exp(-impactPhase * 6) * 0.12 : 0;
+    modelRoot.position.x += cachedModelFwd.x * impactShock;
+    modelRoot.position.z += cachedModelFwd.z * impactShock;
   }
 
   if (modelRoot) modelRoot.updateMatrixWorld(true);
