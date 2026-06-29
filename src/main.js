@@ -1410,24 +1410,21 @@ function updateProjection(dt) {
 
   const kneeH = Math.max(0.15, sensed.y);
 
-  // "발을 닫는 기준": reference from the forward-most toe bone so the near edge is
-  // always floorStart ahead of wherever the front foot reaches during stride.
-  // Spring (K_s=22, critically damped) smooths ~2Hz running oscillation to ±2-3cm residual.
-  const ltTip = modelLoaded ? getFootFrontPoint('left') : null;
-  const rtTip = modelLoaded ? getFootFrontPoint('right') : null;
-  let fwdToe = null;
-  if (ltTip && rtTip) {
-    const ltFwd = (ltTip.x - bodyPos.x) * modelFwd.x + (ltTip.z - bodyPos.z) * modelFwd.z;
-    const rtFwd = (rtTip.x - bodyPos.x) * modelFwd.x + (rtTip.z - bodyPos.z) * modelFwd.z;
-    fwdToe = ltFwd > rtFwd ? ltTip : rtTip;
-  }
-  const toeRef = fwdToe
-    ? new THREE.Vector3(fwdToe.x, 0.012, fwdToe.z)
-    : new THREE.Vector3(bodyPos.x + modelFwd.x * modelHeight * 0.30, 0.012, bodyPos.z + modelFwd.z * modelHeight * 0.30);
+  // "발을 닫는 기준" — near edge anchored to bodyPos + max-stride toe extent (~35% height),
+  // so the spring reference is stable (bodyPos barely moves during running: ±2-3cm).
+  // Forward-toe bone tracking caused spring lag that pushed the floor backward under the body.
+  const BODY_TO_TOE = modelHeight * 0.35;
+
+  // Inclined floor plane: near edge stays at y≈0 (ground), far edge rises with pitch.
+  // tiltAngle = -pitchRad because pitch slider is negative (looking down), tilt is positive (up).
+  const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -15));
+  const tiltAngle = -pitchRad; // e.g. pitch=-15° → tiltAngle=+15° → far edge rises
+  const floorY = (floorDepth / 2) * Math.sin(tiltAngle);
+
   const stableTarget = new THREE.Vector3(
-    toeRef.x + modelFwd.x * planeCenterDist,
-    0.012,
-    toeRef.z + modelFwd.z * planeCenterDist
+    bodyPos.x + modelFwd.x * (BODY_TO_TOE + planeCenterDist),
+    floorY,
+    bodyPos.z + modelFwd.z * (BODY_TO_TOE + planeCenterDist)
   );
   lastIdealTarget.copy(stableTarget);
 
@@ -1440,29 +1437,27 @@ function updateProjection(dt) {
   }
 
   // Raw floor position: actual knee bone XZ drives the projection (no spring).
-  // kneeModule oscillates with the animation — fast anim = fast floor movement,
-  // paused anim = static floor. BODY_TO_TOE offset not needed here since
-  // the knee is already ahead of bodyPos by the lower-leg forward extent.
-  const KNEE_TO_TOE = modelHeight * 0.09; // m: knee→toe forward offset scales with height
+  const KNEE_TO_TOE = modelHeight * 0.09;
   const rawFloorCenter = new THREE.Vector3(
     kneeModule.x + modelFwd.x * (KNEE_TO_TOE + planeCenterDist),
-    0.012,
+    floorY,
     kneeModule.z + modelFwd.z * (KNEE_TO_TOE + planeCenterDist)
   );
 
-  // For HW mode, sensed (noisy IMU) XZ disturbance is added to the stable target
-  // so that sensor noise appears as residual floor jitter.
+  // For HW mode, sensed (noisy IMU) XZ disturbance is added to the stable target.
   const sensedTarget = new THREE.Vector3(
     stableTarget.x + (sensed.x - bodyPos.x) * 0.4,
-    0.012,
+    floorY,
     stableTarget.z + (sensed.z - bodyPos.z) * 0.4
   );
 
   // Angle target for spring: ideal→stableTarget, HW→sensedTarget (adds noise)
   const angleTarget = stabMode === 'hw' ? sensedTarget : stableTarget;
 
-  // Rotate floor plane to always face body forward direction (YXZ order keeps plane horizontal)
+  // Rotate floor plane: Y to face forward, X to tilt (near edge at y=0, far edge rises).
+  // YXZ order: Ry applied last (world rotation), Rx applied first (tilts the inclined surface).
   floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
+  floorPlane.rotation.x = -Math.PI / 2 + tiltAngle;
 
   if (stabilize) {
     // Safety: if spring drifted far from target (e.g. huge dt spike), snap immediately.
