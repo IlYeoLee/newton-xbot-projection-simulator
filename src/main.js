@@ -1415,49 +1415,37 @@ function updateProjection(dt) {
   // Forward-toe bone tracking caused spring lag that pushed the floor backward under the body.
   const BODY_TO_TOE = modelHeight * 0.35;
 
-  // Inclined floor plane: near edge stays at y≈0 (ground), far edge rises with pitch.
-  // tiltAngle = -pitchRad because pitch slider is negative (looking down), tilt is positive (up).
-  const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -15));
-  const tiltAngle = -pitchRad; // e.g. pitch=-15° → tiltAngle=+15° → far edge rises
-  const floorY = (floorDepth / 2) * Math.sin(tiltAngle);
-
   const stableTarget = new THREE.Vector3(
     bodyPos.x + modelFwd.x * (BODY_TO_TOE + planeCenterDist),
-    floorY,
+    0.012,
     bodyPos.z + modelFwd.z * (BODY_TO_TOE + planeCenterDist)
   );
   lastIdealTarget.copy(stableTarget);
 
-  // First frame after model load: snap spring to computed target so it doesn't
-  // drift in from the initial placeholder position (prevents far-away beam on refresh).
   if (!stabInitialized) {
     qStabFloor.copy(stableTarget);
     stabVelocity.set(0, 0, 0);
     stabInitialized = true;
   }
 
-  // Raw floor position: actual knee bone XZ drives the projection (no spring).
   const KNEE_TO_TOE = modelHeight * 0.09;
   const rawFloorCenter = new THREE.Vector3(
     kneeModule.x + modelFwd.x * (KNEE_TO_TOE + planeCenterDist),
-    floorY,
+    0.012,
     kneeModule.z + modelFwd.z * (KNEE_TO_TOE + planeCenterDist)
   );
 
-  // For HW mode, sensed (noisy IMU) XZ disturbance is added to the stable target.
   const sensedTarget = new THREE.Vector3(
     stableTarget.x + (sensed.x - bodyPos.x) * 0.4,
-    floorY,
+    0.012,
     stableTarget.z + (sensed.z - bodyPos.z) * 0.4
   );
 
   // Angle target for spring: ideal→stableTarget, HW→sensedTarget (adds noise)
   const angleTarget = stabMode === 'hw' ? sensedTarget : stableTarget;
 
-  // Rotate floor plane: Y to face forward, X to tilt (near edge at y=0, far edge rises).
-  // YXZ order: Ry applied last (world rotation), Rx applied first (tilts the inclined surface).
   floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
-  floorPlane.rotation.x = -Math.PI / 2 + tiltAngle;
+  floorPlane.rotation.x = -Math.PI / 2; // keep flat on ground
 
   if (stabilize) {
     // Safety: if spring drifted far from target (e.g. huge dt spike), snap immediately.
