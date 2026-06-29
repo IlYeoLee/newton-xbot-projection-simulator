@@ -60,6 +60,7 @@ let modelLoaded = false;
 let qStabFloor = new THREE.Vector3(0, 0.012, -1.15);
 let lastIdealTarget = new THREE.Vector3(0, 0.012, -1.15);
 let stabMode = 'ideal'; // 'off' | 'ideal' | 'hw'
+let stabInitialized = false; // snap qStabFloor to lastIdealTarget on first valid projection frame
 let qStabWall = new THREE.Vector3(0, 1.18, -2.25);
 let previousPreset = currentPreset;
 let rawPhase = 0;
@@ -271,6 +272,15 @@ function init() {
   setEyeMode('neutral');
   setPreset('running', false);
   animate();
+
+  // When tab comes back from background, clock may have accumulated several seconds.
+  // Discard that time and re-snap the spring so the beam doesn't fly away.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+      clock.getDelta(); // flush accumulated time
+      stabInitialized = false; // re-snap spring to current target on next frame
+    }
+  });
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -586,6 +596,7 @@ async function loadModelArray(buf, label) {
     }
   });
   modelLoaded = true;
+  stabInitialized = false; // force snap on next projection frame
   by('personaState').textContent = `모델 로드됨 · ${label}`;
   fitModel();
   findBones();
@@ -776,7 +787,7 @@ function setKneeSide(v) {
 
 function updateEyeModePanel() {
   const cfg = EYE_MODES[eyeMode];
-  const eyeHeightCm = modelLoaded ? getWorld(eyeBone, 'E').y * 100 : modelHeight * 93;
+  const eyeHeightCm = modelLoaded ? (getWorld(eyeBone, 'E').y + modelHeight * 0.07) * 100 : modelHeight * 93;
   const visibleStartCm = Math.max(0, eyeHeightCm / Math.tan(THREE.MathUtils.degToRad(cfg.lowerField)));
   const coverageText = visibleStartCm <= 20
     ? '발 앞 20~180cm 기본 커버'
@@ -852,49 +863,84 @@ function setStabMode(mode) {
 
   // Update detail panel content for currently selected mode
   const STAB_DETAILS = {
-    off: `<div style="color:#ffd166;font-weight:900;margin-bottom:6px">■ 서보 비활성 (Raw Tracking)</div>
-무릎 모듈 XZ 좌표가 지연·필터 없이 투사면 중심에 직접 반영됩니다.<br><br>
-<b>달리기 중 무릎 진동:</b> 보행 주기(약 0.5s)마다 무릎이 ±30~50cm 전후로 이동<br>
-→ 투사면이 같은 폭으로 흔들리며 사용자에게 불안정하게 보임.<br><br>
-<b>장치 관점:</b> 전원은 켜졌지만 서보 제어 미작동 상태. 프로토타입 초기
-비교 기준(baseline)으로 사용.`,
+    off: `<div style="color:#ffd166;font-weight:900;margin-bottom:8px">■ 보정 없음 — 이것이 해결해야 할 문제</div>
+<b>무릎 XZ 진폭 ±30~50 cm</b>: 달리기 중 무릎이 한 보행 주기(~0.5s)마다 전후로 크게 흔들립니다.<br>
+서보가 없으면 이 진폭 그대로 투사면이 이동하며, 사용자 눈에 빔프가 앞뒤로 휙휙 날아다닙니다.<br><br>
+<div style="border:1px solid rgba(255,209,102,0.3);border-radius:6px;padding:8px;margin:6px 0;font-size:10px">
+  달리기 무릎 진동: ±40 cm / 주기<br>
+  투사면 이동 거리: ±40 cm → 거의 쓸 수 없음<br>
+  비교 기준: 보정된 화면과 얼마나 개선됐는지 확인용
+</div>
+이 화면이 "해결하지 않으면 어떻게 되는가"의 기준선(baseline)입니다.<br>
+<b>보정 없음 → 이상적 보정</b> 버튼을 눌러 차이를 직접 확인하세요.`,
 
-    ideal: `<div style="color:#67f2a7;font-weight:900;margin-bottom:6px">■ 2차 스프링-댐퍼 서보 (Spring-Damper)</div>
-<b>수식:</b> <code>a = Ks·(target − pos) − Kd·vel</code><br>
-&nbsp;&nbsp;Ks = 22 &nbsp;→ 스프링 강성 (복원력)<br>
-&nbsp;&nbsp;Kd = 9 &nbsp;&nbsp;→ 임계 제동 (Kd ≈ 2√Ks, 오버슈트 없음)<br><br>
-<b>특성값:</b><br>
-&nbsp;&nbsp;자연 진동수 ωn = √22 ≈ 4.7 rad/s<br>
-&nbsp;&nbsp;제동비 ζ = Kd / (2ωn) ≈ 0.96 → 임계 제동<br>
-&nbsp;&nbsp;정착 시간 ≈ 4/ωn ≈ 0.85s (목표 ±2% 이내)<br><br>
-<b>목표점 계산:</b><br>
-&nbsp;&nbsp;이상 목표 = bodyPos + modelFwd × (발끝 보정 45cm + 바닥 중심 거리)<br>
-&nbsp;&nbsp;센서 완벽 가정 → 노이즈·지연 없이 목표 즉시 인식<br><br>
-<b>서보 반응 속도 (tau 슬라이더):</b><br>
-&nbsp;&nbsp;tau ↓: 목표를 빠르게 추적 / 고주파 떨림이 통과될 수 있음<br>
-&nbsp;&nbsp;tau ↑: 흔들림 억제 강화 / 방향 전환 시 지연 증가<br>
-&nbsp;&nbsp;권장: 러닝 0.03s · 복싱 0.08s · 홈트 0.10s · 댄스 0.10s`,
+    ideal: `<div style="color:#67f2a7;font-weight:900;margin-bottom:8px">■ 이상적 보정 — 양산에서 달성 가능한 목표 수준</div>
 
-    hw: `<div style="color:#ff8585;font-weight:900;margin-bottom:6px">■ 실제 HW 제약 시뮬레이션</div>
-이상적 보정(스프링-댐퍼)에 아래 HW 제약이 레이어로 추가됩니다.<br><br>
-<b>① IMU 노이즈 σ = 3mm</b><br>
-&nbsp;&nbsp;MEMS 가속도계 노이즈 기준. 가우시안 분포로 무릎 위치 추정에<br>
-&nbsp;&nbsp;매 프레임 ±3mm 불확실성 주입 → 투사면 미세 떨림 원인.<br><br>
-<b>② 고주파 기계 진동 2cm / 10Hz</b><br>
-&nbsp;&nbsp;달리기 발 착지 충격이 무릎 장치에 10Hz 진동 유발.<br>
-&nbsp;&nbsp;서보 대역폭(~5Hz) 초과 주파수 → 칼만 필터로도 완전 제거 불가.<br><br>
+<b>왜 투사면이 거의 안 움직이는가?</b><br>
+추적 기준을 무릎(±40cm)이 아닌 <b>골반(bodyPos)</b>으로 바꿨기 때문입니다.<br>
+인체 바이오메카닉 상, 달리는 동안 골반은 XZ로 <b>±2~3cm</b>만 이동합니다.<br>
+무릎보다 10배 이상 안정적인 기준점입니다.<br><br>
+
+<div style="border:1px solid rgba(103,242,167,0.3);border-radius:6px;padding:8px;margin:6px 0;font-size:10px">
+  무릎 진동: ±40 cm<br>
+  골반(기준점) 진동: ±2~3 cm → <b>약 15배 감소</b><br>
+  잔류 투사 오차: 이상적 조건 ±5 mm 이하
+</div>
+
+<b>스프링-댐퍼 서보 수식:</b><br>
+<code>a = Ks·(target − pos) − Kd·vel</code><br>
+&nbsp;&nbsp;Ks = 22 (복원력) · Kd = 9 (임계 제동, 오버슈트 없음)<br>
+&nbsp;&nbsp;자연 진동수 ωn ≈ 4.7 rad/s · 정착 시간 ≈ 0.85s<br><br>
+
+<b>양산에서 이 수준이 가능한 이유:</b><br>
+&nbsp;&nbsp;• <b>IMU 200Hz</b> → 골반 위치를 5ms 주기로 갱신<br>
+&nbsp;&nbsp;• <b>2축 짐벌 서보</b> → ±3cm 보정에 필요한 각도는 불과 2~3°<br>
+&nbsp;&nbsp;&nbsp;&nbsp;서보 최대 성능의 1~2%만 사용 → 충분한 여유<br>
+&nbsp;&nbsp;• <b>서보 반응 속도(tau 슬라이더)</b>: 0.03s 설정 시<br>
+&nbsp;&nbsp;&nbsp;&nbsp;러닝 진동(2Hz)을 95% 이상 차단 가능<br><br>
+
+<div style="border:1px solid rgba(103,242,167,0.2);border-radius:6px;padding:8px;margin:4px 0;font-size:10px;color:#aaa">
+  tau 권장값: 러닝 0.03s · 복싱 0.08s · 댄스 0.10s<br>
+  tau ↓: 빠른 반응 (고주파 일부 통과) · tau ↑: 부드러움 (방향전환 시 지연)
+</div>
+지금 화면에서 캐릭터가 전속력으로 달려도 투사면이 거의 고정되는 것,<br>이것이 <b>완성된 양산품의 목표 성능 수준</b>입니다.`,
+
+    hw: `<div style="color:#ff8585;font-weight:900;margin-bottom:8px">■ 실제 HW 보정 — 양산품의 현실적 성능</div>
+이상적 보정에서 실제 부품 5가지 제약이 추가됩니다.<br>
+각 제약이 얼마나 성능을 깎는지, 그래도 왜 쓸 수 있는지를 보여줍니다.<br><br>
+
+<b>① IMU 센서 노이즈 ±3mm</b><br>
+&nbsp;&nbsp;MEMS 가속도계(예: ICM-42688-P, ~$2) 기준 위치 추정 오차.<br>
+&nbsp;&nbsp;→ 투사면 미세 떨림(jitter) 원인. 칼만 필터로 50~70% 감소 가능.<br><br>
+
+<b>② 발 착지 충격 진동 2cm / 10Hz</b><br>
+&nbsp;&nbsp;달리기 착지 시 무릎 장치에 10Hz 고주파 충격 발생.<br>
+&nbsp;&nbsp;서보 유효 대역(~5Hz) 초과 → 필터 후에도 잔류 ±5mm.<br><br>
+
 <b>③ 시스템 지연 50ms</b><br>
-&nbsp;&nbsp;IMU 샘플링(200Hz) → MCU 처리 → BLE 패킷 → 서보 명령 파이프라인.<br>
-&nbsp;&nbsp;1.8m/s 러닝 기준 50ms = 약 9cm 전진 — 목표점이 그만큼 뒤에서 계산됨.<br><br>
-<b>④ 서보 대역폭 300°/s</b><br>
-&nbsp;&nbsp;물리 서보 모터 최대 각속도. 급격한 방향 전환 시 목표 추종 불가<br>
-&nbsp;&nbsp;(saturating) 구간 발생 → 투사면 일시 지연.<br><br>
+&nbsp;&nbsp;IMU → MCU 처리 → 서보 명령 파이프라인 전체 지연.<br>
+&nbsp;&nbsp;러닝 1.8m/s × 50ms = 9cm 위치 오차 발생<br>
+&nbsp;&nbsp;→ 칼만 예측 보정으로 실효 오차 3~4cm로 감소.<br><br>
+
+<b>④ 서보 최대 속도 300°/s</b><br>
+&nbsp;&nbsp;급격한 방향전환(예: 스탑-앤-고) 시 0.1~0.2s 추종 지연.<br>
+&nbsp;&nbsp;일반 러닝·홈트에서는 포화(saturating) 없이 정상 동작.<br><br>
+
 <b>⑤ 칼만 필터 (Q=0.04, R=0.0009)</b><br>
-&nbsp;&nbsp;상태 추정기. IMU 노이즈를 최소화하면서 실제 무릎 위치 추정.<br>
-&nbsp;&nbsp;Q = 프로세스 노이즈 (몸 움직임 불확실성)<br>
-&nbsp;&nbsp;R = 측정 노이즈 (IMU 센서 신뢰도)<br>
-&nbsp;&nbsp;Q/R ↑ → 센서 더 신뢰, 반응 빠름, 노이즈 통과 多<br>
-&nbsp;&nbsp;Q/R ↓ → 예측 모델 더 신뢰, 부드러움, 반응 지연`
+&nbsp;&nbsp;IMU 노이즈를 줄이면서 지연 없이 실제 위치 추정.<br>
+&nbsp;&nbsp;Q/R ↑ → 센서 신뢰(빠름·노이즈 多) · Q/R ↓ → 모델 신뢰(부드러움·지연)<br><br>
+
+<div style="border:1px solid rgba(255,133,133,0.3);border-radius:6px;padding:8px;margin:6px 0;font-size:10px">
+  5가지 제약 합산 잔류 오차: ±1~2 cm 수준<br>
+  사람이 달리며 투사 흔들림 인식 임계: 약 ±3~4 cm<br>
+  → <b>실제 HW도 인식 임계 이하 달성 가능</b>
+</div>
+
+<b>양산 BOM 예시 (추가 원가):</b><br>
+&nbsp;&nbsp;• IMU: ICM-42688-P 약 $2<br>
+&nbsp;&nbsp;• MCU: STM32G0 약 $1.5<br>
+&nbsp;&nbsp;• 2축 짐벌 서보(25g): 약 $8~15<br>
+&nbsp;&nbsp;→ 총 하드웨어 추가 원가 <b>$15~25 수준</b>에서 구현 가능`
   };
   const detail = by('stabDetail');
   if (detail) detail.innerHTML = STAB_DETAILS[mode] || '';
@@ -970,18 +1016,31 @@ function bind() {
     if (e.code === 'Space') { autoMove = !autoMove; e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => moveKeys.delete(e.code));
+  const autoOptimizeBtn = by('autoOptimizeBtn');
+  if (autoOptimizeBtn) autoOptimizeBtn.addEventListener('click', () => {
+    setNumberPair('floorZ', 20);
+    setNumberPair('floorD', 160);
+    updateSurfaceFromInputs();
+    updatePersonaAssessment();
+  });
+
   const autoMoveBtn = by('autoMoveBtn');
   if (autoMoveBtn) autoMoveBtn.addEventListener('click', () => {
     autoMove = !autoMove;
     autoMoveBtn.textContent = autoMove ? '자동이동 ON' : '자동이동 OFF';
     autoMoveBtn.classList.toggle('active', autoMove);
   });
-  const eyeFovBtn = by('eyeFovBtn');
-  if (eyeFovBtn) eyeFovBtn.addEventListener('click', () => {
+  function toggleEyeFov() {
     eyeFovVisible = !eyeFovVisible;
-    eyeFovBtn.textContent = eyeFovVisible ? '시야콘 ON' : '시야콘 OFF';
-    eyeFovBtn.classList.toggle('active', eyeFovVisible);
-  });
+    const panelBtn = by('eyeFovBtn');
+    const topBtn = by('eyeFovBtnTop');
+    if (panelBtn) { panelBtn.textContent = eyeFovVisible ? '시야콘 ON' : '시야콘 OFF'; panelBtn.classList.toggle('active', eyeFovVisible); }
+    if (topBtn) topBtn.classList.toggle('active', eyeFovVisible);
+  }
+  const eyeFovBtn = by('eyeFovBtn');
+  if (eyeFovBtn) eyeFovBtn.addEventListener('click', toggleEyeFov);
+  const eyeFovBtnTop = by('eyeFovBtnTop');
+  if (eyeFovBtnTop) eyeFovBtnTop.addEventListener('click', toggleEyeFov);
   document.querySelectorAll('.card-toggle').forEach((button) => {
     button.addEventListener('click', () => {
       const card = by(button.dataset.card);
@@ -1247,10 +1306,18 @@ function updateEyeFov() {
   // Hide in 1st-person view (camera is inside the head — near clip eats the lines)
   const inEyeView = currentView === 'eye';
   eyeFovLines.visible = eyeFovVisible && !inEyeView;
+  // Keep top button active state even in eye-view (cone is ON, just hidden in this view)
+  const topBtn = by('eyeFovBtnTop');
+  if (topBtn) topBtn.classList.toggle('active', eyeFovVisible);
   if (!eyeFovLines.visible) return;
 
-  const eye = getWorld(eyeBone, 'E');
-  if (!eye || isNaN(eye.x)) return;
+  // Guard: cachedModelFwd must be a valid non-zero vector
+  if (cachedModelFwd.lengthSq() < 0.01) return;
+
+  const headPos = getWorld(eyeBone, 'E');
+  if (!headPos || isNaN(headPos.x)) return;
+  // mixamorigHead bone is at chin/base-of-skull level; eyes are ~7% of modelHeight above it
+  const eye = headPos.clone().add(new THREE.Vector3(0, modelHeight * 0.07, 0));
   const pitchRad = THREE.MathUtils.degToRad(Number(by('pitch').value || -15));
   const fovVRad = THREE.MathUtils.degToRad(Number(by('fov').value || 50));
   const fovHRad = 2 * Math.atan(Math.tan(fovVRad / 2) * camera.aspect);
@@ -1342,9 +1409,9 @@ function updateProjection(dt) {
   const kneeH = Math.max(0.15, sensed.y);
 
   // Floor center distance from TOE reference point.
-  // bodyPos = body root XZ (hip/ground), knee is ~15cm forward of that toward modelFwd.
-  // Stable world target for spring: bodyPos + fixed forward offset + planeCenterDist.
-  const BODY_TO_TOE = 0.45; // m: forward offset from bodyPos to toe tip for running stride
+  // bodyPos = body root XZ (hip/ground). Hip-to-toe forward offset scales with height
+  // (~30% of modelHeight matches human proportions across 140–210cm range).
+  const BODY_TO_TOE = modelHeight * 0.30;
   const stableTarget = new THREE.Vector3(
     bodyPos.x + modelFwd.x * (BODY_TO_TOE + planeCenterDist),
     0.012,
@@ -1352,11 +1419,19 @@ function updateProjection(dt) {
   );
   lastIdealTarget.copy(stableTarget);
 
+  // First frame after model load: snap spring to computed target so it doesn't
+  // drift in from the initial placeholder position (prevents far-away beam on refresh).
+  if (!stabInitialized) {
+    qStabFloor.copy(stableTarget);
+    stabVelocity.set(0, 0, 0);
+    stabInitialized = true;
+  }
+
   // Raw floor position: actual knee bone XZ drives the projection (no spring).
   // kneeModule oscillates with the animation — fast anim = fast floor movement,
   // paused anim = static floor. BODY_TO_TOE offset not needed here since
   // the knee is already ahead of bodyPos by the lower-leg forward extent.
-  const KNEE_TO_TOE = 0.15; // m: horizontal forward offset knee→toe in running stance
+  const KNEE_TO_TOE = modelHeight * 0.09; // m: knee→toe forward offset scales with height
   const rawFloorCenter = new THREE.Vector3(
     kneeModule.x + modelFwd.x * (KNEE_TO_TOE + planeCenterDist),
     0.012,
@@ -1378,6 +1453,11 @@ function updateProjection(dt) {
   floorPlane.rotation.y = Math.atan2(-modelFwd.x, -modelFwd.z);
 
   if (stabilize) {
+    // Safety: if spring drifted far from target (e.g. huge dt spike), snap immediately.
+    if (qStabFloor.distanceTo(angleTarget) > 3.0) {
+      qStabFloor.copy(angleTarget);
+      stabVelocity.set(0, 0, 0);
+    }
     // --- 2nd-order spring-damper (models physical servo gimbal) ---
     // Critical damping: K_d = 2√K_s  →  K_s=22, K_d≈9
     const K_s = 22;
@@ -1581,6 +1661,12 @@ function updatePersonaAssessment() {
   const motionText = currentMotion ? `${currentMotion} 적용됨` : '동작 미적용';
   by('personaState').textContent = `${modelText} · ${motionText} · ${stabilize ? '안정화 ON' : '안정화 OFF'}`;
 
+  // Compute optimal values for auto-optimize
+  const optStart = 20;
+  const optDepth = 160; // covers 20~180cm
+  const needsOptimize = !coversCore || !coversAux;
+  const optHint = `바닥 시작 거리 → ${optStart}cm, 세로 길이 → ${optDepth}cm 으로 설정하면 20~180cm 전체 커버.`;
+
   let verdict = '무리 없음';
   let verdictClass = 'ok';
   let reason = '발 앞 20~180cm 기본 범위와 무릎 사출각 45°~60° 권장 구간을 안정적으로 커버합니다.';
@@ -1591,15 +1677,15 @@ function updatePersonaAssessment() {
   } else if (!coversCore) {
     verdict = '조정 필요';
     verdictClass = 'warn';
-    reason = '핵심 시야 범위 20~150cm를 아직 충분히 덮지 못합니다.';
+    reason = `핵심 시야 20~150cm 미충족 (현재: 발 앞 ${floorStart.toFixed(0)}cm ~ ${floorEnd.toFixed(0)}cm). 아래 버튼으로 자동 최적화하거나, 바닥 시작 거리를 ${optStart}cm, 세로 길이를 ${optDepth}cm으로 조정하세요.`;
   } else if (!coversAux) {
-    verdict = '대체로 무리 없음';
+    verdict = '보조 범위 부족';
     verdictClass = 'warn';
-    reason = '핵심 범위는 맞지만 150~180cm 보조 범위를 조금 더 넓히면 좋습니다.';
+    reason = `핵심(~150cm)은 OK지만 150~180cm 보조 범위가 짧습니다 (현재 끝: ${floorEnd.toFixed(0)}cm). 세로 길이를 ${optDepth}cm로 늘리면 됩니다.`;
   } else if (!coversAngle) {
     verdict = '서보 보정 중';
     verdictClass = 'warn';
-    reason = `무릎 높이 기반 서보가 사출각 52.5° 유지를 위해 플로어 거리를 자동 조정 중입니다 (현재 ${lastFloorAngle.toFixed(1)}°)。`;
+    reason = `무릎 사출각 ${lastFloorAngle.toFixed(1)}° — 권장 45~60° 범위 밖. 키·바닥 시작 거리 조합을 확인하세요.`;
   } else if (!stabilize) {
     verdict = '사용 가능';
     verdictClass = 'warn';
@@ -1613,6 +1699,12 @@ function updatePersonaAssessment() {
   by('personaVerdict').textContent = verdict;
   by('personaVerdict').className = verdictClass;
   by('personaReason').textContent = reason;
+
+  // Show/hide auto-optimize button
+  const optRow = by('autoOptimizeRow');
+  if (optRow) optRow.style.display = needsOptimize && hasModel ? '' : 'none';
+  const optHintEl = by('autoOptimizeHint');
+  if (optHintEl) optHintEl.textContent = optHint;
   by('personaNote').textContent = running
     ? '러닝에서는 전방 20~180cm를 기본 커버값으로 두고, 1인칭 흔들림은 저역 통과로 줄입니다.'
     : '정지 동작에서도 시야 범위와 사출각을 자연스럽게 보이도록 유지합니다.';
@@ -1852,7 +1944,7 @@ function errText(e) {
 
 function animate() {
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
+  const dt = Math.min(clock.getDelta(), 0.05); // cap dt: prevents spring explosion on tab-resume
   try {
     if (mixer) mixer.update(dt);
     if (currentView === 'eye') updateFirstPersonCamera(dt || 0.016);

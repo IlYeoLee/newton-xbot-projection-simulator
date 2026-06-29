@@ -25,6 +25,7 @@
           <button id="toggleLeft" type="button">설정 접기</button>
           <button id="toggleRight" type="button">상태 접기</button>
           <button id="resetSettings" type="button">설정 초기화</button>
+          <button id="eyeFovBtnTop" type="button">시야콘</button>
           <button id="view-orbit" class="active" data-view="orbit">자유 3D</button>
           <button id="view-side" data-view="side">측면</button>
           <button id="view-top" data-view="top">머리 위</button>
@@ -231,6 +232,10 @@
             <div class="card-body">
             <div class="metric"><span>판단</span><span id="personaVerdict" class="ok">무리 없음</span></div>
             <div class="metric"><span>이유</span><span id="personaReason">발 앞 20~180cm가 기본 범위에 들어옵니다.</span></div>
+            <div id="autoOptimizeRow" style="display:none;margin:8px 0">
+              <button id="autoOptimizeBtn" type="button" style="width:100%;background:rgba(255,209,102,0.15);border-color:rgba(255,209,102,0.5);color:#ffd166">자동 최적화 적용</button>
+              <div id="autoOptimizeHint" class="mini" style="margin-top:5px;color:#ffd166"></div>
+            </div>
             <div class="metric"><span>현재 상태</span><span id="personaState" class="mono">모델 미로드 · 동작 미적용</span></div>
             <div class="metric"><span>시선 메모</span><span id="personaNote">1인칭은 과한 흔들림 없이 전방을 유지합니다.</span></div>
             </div>
